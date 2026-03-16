@@ -82,11 +82,12 @@ function StartScreen({ onStart }) {
       '> ACTIVATING NEON BEACONS...',
       '> SYSTEM ONLINE ✓',
     ]
-    let i = 0
+    const idx = { current: 0 }
     const timer = setInterval(() => {
-      if (i < lines.length) {
-        setBootLines(prev => [...prev, lines[i]])
-        i++
+      if (idx.current < lines.length) {
+        const line = lines[idx.current]
+        idx.current++
+        setBootLines(prev => [...prev, line])
       } else {
         clearInterval(timer)
         setTimeout(() => setReady(true), 400)
@@ -136,7 +137,7 @@ function StartScreen({ onStart }) {
           <div key={i} style={{
             fontFamily: "'Share Tech Mono', monospace",
             fontSize: 11,
-            color: i === bootLines.length - 1 && line.includes('✓') ? '#00c864' : 'rgba(0, 200, 180, 0.6)',
+            color: i === bootLines.length - 1 && typeof line === 'string' && line.includes('✓') ? '#00c864' : 'rgba(0, 200, 180, 0.6)',
             lineHeight: 2,
             letterSpacing: 0.5,
           }}>
