@@ -1,0 +1,427 @@
+import { Suspense, useRef, useState, useCallback, useEffect } from 'react'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import { Sky, Stars, Sparkles, Text, Billboard } from '@react-three/drei'
+import * as THREE from 'three'
+import { Ground, WaterArea } from './Ground'
+import { Building, Shack } from './Building'
+import { Car, DeadTree, Bush, PowerPole, Bridge, Rubble } from './Props'
+import { SignPole } from './SignPole'
+import { PlayerModel } from '../characters/PlayerModel'
+import { ZombieModel } from '../characters/ZombieModel'
+
+// ─── GAME CONFIG ───
+const MOVE_SPEED = 0.08
+const SIGN_RANGE = 4
+const KILL_RANGE = 3
+
+const LANDMARKS = [
+  { pos: [0, 0, 28], id: 'start', label: 'RAMESH REDDY', section: 'intro' },
+  { pos: [20, 0, 16], id: 'experience', label: 'EXPERIENCE', section: 'experience' },
+  { pos: [22, 0, -4], id: 'projects', label: 'PROJECTS', section: 'projects' },
+  { pos: [-16, 0, -2], id: 'skills', label: 'SKILLS', section: 'skills' },
+  { pos: [-8, 0, -28], id: 'contact', label: 'CONTACT ME', section: 'contact' },
+]
+
+const ZOMBIE_SPAWNS = [
+  { pos: [8, 0, 20], type: 0 },
+  { pos: [-10, 0, 14], type: 1 },
+  { pos: [14, 0, 4], type: 2 },
+  { pos: [-6, 0, -12], type: 0 },
+  { pos: [10, 0, -10], type: 1 },
+  { pos: [-14, 0, -18], type: 2 },
+  { pos: [4, 0, -20], type: 0 },
+  { pos: [18, 0, -14], type: 1 },
+]
+
+// ─── COLLISION BOXES (buildings, water, etc.) ───
+const COLLIDERS = [
+  // Buildings
+  { pos: [-8, 0, 22], size: [5, 4, 5] },
+  { pos: [10, 0, 24], size: [4, 6, 4] },
+  { pos: [-18, 0, 8], size: [6, 5, 5] },
+  { pos: [16, 0, 10], size: [4, 4, 4] },
+  { pos: [-4, 0, 4], size: [5, 7, 6] },
+  { pos: [8, 0, -6], size: [4, 5, 4] },
+  { pos: [-12, 0, -10], size: [5, 4, 5] },
+  { pos: [24, 0, 0], size: [4, 6, 4] },
+  { pos: [-20, 0, -14], size: [4, 4, 4] },
+  { pos: [14, 0, -18], size: [5, 5, 5] },
+  { pos: [0, 0, -14], size: [6, 8, 6] },
+  // Water area (top-left)
+  { pos: [-14, 0, -30], size: [20, 2, 14] },
+]
+
+function checkCollision(x, z, colliders, radius = 0.5) {
+  for (const c of colliders) {
+    const hw = c.size[0] / 2 + radius
+    const hd = c.size[2] / 2 + radius
+    if (Math.abs(x - c.pos[0]) < hw && Math.abs(z - c.pos[2]) < hd) {
+      return true
+    }
+  }
+  return false
+}
+
+// ─── THIRD PERSON CAMERA ───
+function ThirdPersonCamera({ target }) {
+  const { camera } = useThree()
+  const offset = useRef(new THREE.Vector3(0, 6, 8))
+  const lookAt = useRef(new THREE.Vector3())
+
+  useFrame(() => {
+    if (!target.current) return
+    const px = target.current.position.x
+    const pz = target.current.position.z
+
+    const desiredPos = new THREE.Vector3(
+      px + offset.current.x,
+      offset.current.y,
+      pz + offset.current.z
+    )
+
+    camera.position.lerp(desiredPos, 0.06)
+    lookAt.current.set(px, 1, pz)
+    camera.lookAt(lookAt.current)
+  })
+
+  return null
+}
+
+// ─── PLAYER CONTROLLER ───
+function Player({ playerRef, keys, joystick, onNearSign, onNearZombie }) {
+  const groupRef = useRef()
+  const [moving, setMoving] = useState(false)
+  const [dir, setDir] = useState(0)
+
+  useEffect(() => {
+    if (playerRef) playerRef.current = groupRef.current
+  })
+
+  useFrame(() => {
+    if (!groupRef.current) return
+
+    let dx = 0, dz = 0
+
+    if (keys.current.ArrowLeft || keys.current.KeyA) dx -= 1
+    if (keys.current.ArrowRight || keys.current.KeyD) dx += 1
+    if (keys.current.ArrowUp || keys.current.KeyW) dz -= 1
+    if (keys.current.ArrowDown || keys.current.KeyS) dz += 1
+
+    if (joystick.current) {
+      dx += joystick.current.x
+      dz += joystick.current.y
+    }
+
+    const len = Math.sqrt(dx * dx + dz * dz)
+    if (len > 0.1) {
+      dx = (dx / len) * MOVE_SPEED
+      dz = (dz / len) * MOVE_SPEED
+
+      const nx = groupRef.current.position.x + dx
+      const nz = groupRef.current.position.z + dz
+
+      if (!checkCollision(nx, groupRef.current.position.z, COLLIDERS)) {
+        groupRef.current.position.x = nx
+      }
+      if (!checkCollision(groupRef.current.position.x, nz, COLLIDERS)) {
+        groupRef.current.position.z = nz
+      }
+
+      // Face movement direction
+      const angle = Math.atan2(dx, dz)
+      groupRef.current.rotation.y = THREE.MathUtils.lerp(
+        groupRef.current.rotation.y,
+        angle,
+        0.15
+      )
+
+      setMoving(true)
+    } else {
+      setMoving(false)
+    }
+
+    // Check landmarks
+    const px = groupRef.current.position.x
+    const pz = groupRef.current.position.z
+    let nearSign = null
+    for (const lm of LANDMARKS) {
+      const dist = Math.sqrt((px - lm.pos[0]) ** 2 + (pz - lm.pos[2]) ** 2)
+      if (dist < SIGN_RANGE) { nearSign = lm; break }
+    }
+    onNearSign(nearSign)
+  })
+
+  return (
+    <group ref={groupRef} position={[0, 0, 30]}>
+      <PlayerModel moving={moving} direction={dir} />
+    </group>
+  )
+}
+
+// ─── ZOMBIE NPC ───
+function ZombieNPC({ spawn, playerRef, onNear, id }) {
+  const ref = useRef()
+  const [alive, setAlive] = useState(true)
+  const [dying, setDying] = useState(false)
+  const deathProgress = useRef(0)
+  const moveDir = useRef(new THREE.Vector3(Math.random() - 0.5, 0, Math.random() - 0.5).normalize())
+  const moveTimer = useRef(0)
+  const startPos = useRef(new THREE.Vector3(...spawn.pos))
+
+  useFrame(({ clock }) => {
+    if (!ref.current || !alive) {
+      if (dying) {
+        deathProgress.current = Math.min(1, deathProgress.current + 0.03)
+        if (deathProgress.current >= 1) setDying(false)
+      }
+      return
+    }
+
+    // Shamble around
+    moveTimer.current++
+    if (moveTimer.current > 100 + Math.random() * 100) {
+      moveTimer.current = 0
+      moveDir.current.set(Math.random() - 0.5, 0, Math.random() - 0.5).normalize()
+    }
+
+    const speed = 0.015
+    const nx = ref.current.position.x + moveDir.current.x * speed
+    const nz = ref.current.position.z + moveDir.current.z * speed
+
+    // Stay near spawn
+    const distFromSpawn = Math.sqrt(
+      (nx - startPos.current.x) ** 2 + (nz - startPos.current.z) ** 2
+    )
+    if (distFromSpawn < 4 && !checkCollision(nx, nz, COLLIDERS, 0.3)) {
+      ref.current.position.x = nx
+      ref.current.position.z = nz
+    } else {
+      moveDir.current.negate()
+    }
+
+    // Face direction
+    ref.current.rotation.y = Math.atan2(moveDir.current.x, moveDir.current.z)
+
+    // Check if player is near
+    if (playerRef.current) {
+      const dist = ref.current.position.distanceTo(playerRef.current.position)
+      if (dist < KILL_RANGE) {
+        onNear(id, true)
+      } else {
+        onNear(id, false)
+      }
+    }
+  })
+
+  const kill = useCallback(() => {
+    setAlive(false)
+    setDying(true)
+    deathProgress.current = 0
+  }, [])
+
+  // Expose kill method
+  useEffect(() => {
+    if (ref.current) ref.current.userData.kill = kill
+    if (ref.current) ref.current.userData.alive = alive
+  })
+
+  if (!alive && !dying) return null
+
+  return (
+    <group ref={ref} position={spawn.pos}>
+      <ZombieModel type={spawn.type} dying={dying} deathProgress={deathProgress.current} />
+    </group>
+  )
+}
+
+// ─── ENVIRONMENT ───
+function Environment() {
+  return (
+    <>
+      {/* Buildings */}
+      <Building position={[-8, 0, 22]} size={[5, 4, 5]} damaged />
+      <Building position={[10, 0, 24]} size={[4, 6, 4]} color="#101820" />
+      <Building position={[-18, 0, 8]} size={[6, 5, 5]} damaged />
+      <Building position={[16, 0, 10]} size={[4, 4, 4]} color="#0e1622" />
+      <Building position={[-4, 0, 4]} size={[5, 7, 6]} color="#0d1520" damaged />
+      <Building position={[8, 0, -6]} size={[4, 5, 4]} damaged />
+      <Building position={[-12, 0, -10]} size={[5, 4, 5]} color="#101822" />
+      <Building position={[24, 0, 0]} size={[4, 6, 4]} color="#0e1520" />
+      <Building position={[-20, 0, -14]} size={[4, 4, 4]} damaged />
+      <Building position={[14, 0, -18]} size={[5, 5, 5]} color="#101820" damaged />
+      <Building position={[0, 0, -14]} size={[6, 8, 6]} color="#0d1520" />
+      <Shack position={[4, 0, 26]} rotation={0.3} />
+      <Shack position={[-14, 0, 18]} rotation={-0.5} />
+
+      {/* Cars */}
+      <Car position={[6, 0, 22]} rotation={0.4} color="#4a1a1a" />
+      <Car position={[-6, 0, 16]} rotation={-0.3} color="#2a2a3a" />
+      <Car position={[18, 0, -8]} rotation={1.2} color="#3a2a15" />
+      <Car position={[-10, 0, -4]} rotation={0.8} />
+      <Car position={[12, 0, 14]} rotation={-0.6} color="#2a3a2a" />
+
+      {/* Trees */}
+      <DeadTree position={[-14, 0, 2]} scale={1.2} />
+      <DeadTree position={[20, 0, 22]} />
+      <DeadTree position={[-22, 0, -6]} scale={0.9} />
+      <DeadTree position={[8, 0, -14]} scale={1.1} />
+      <DeadTree position={[-6, 0, -22]} />
+      <DeadTree position={[22, 0, -12]} scale={1.3} />
+
+      {/* Bushes */}
+      <Bush position={[-10, 0, 12]} />
+      <Bush position={[14, 0, 8]} color="#1e4422" />
+      <Bush position={[-16, 0, -8]} />
+      <Bush position={[6, 0, -16]} color="#1a3a1e" />
+      <Bush position={[-4, 0, -24]} />
+
+      {/* Power poles */}
+      <PowerPole position={[2, 0, 20]} />
+      <PowerPole position={[-12, 0, 6]} />
+      <PowerPole position={[10, 0, -2]} />
+      <PowerPole position={[-8, 0, -16]} />
+
+      {/* Bridge over water */}
+      <Bridge position={[-6, -0.2, -24]} rotation={0} length={8} />
+
+      {/* Rubble */}
+      <Rubble position={[4, 0, 14]} />
+      <Rubble position={[-8, 0, -2]} />
+      <Rubble position={[16, 0, -6]} />
+      <Rubble position={[-16, 0, -20]} />
+
+      {/* Water */}
+      <WaterArea position={[-14, 0, -32]} size={[22, 16]} />
+
+      {/* Road paths (flat darker ground strips) */}
+      {[
+        [0, 28, 0], [0, 24, 0], [0, 20, 0], [4, 18, Math.PI/4],
+        [10, 16, 0], [16, 16, 0], [20, 16, 0],
+        [4, 16, 0], [0, 14, 0], [0, 10, 0],
+        [-4, 8, -Math.PI/6], [-8, 6, 0], [-12, 4, 0], [-16, 2, Math.PI/6],
+        [-16, -2, 0], [0, 8, Math.PI/5],
+        [6, 4, 0], [10, 2, 0], [14, 0, 0], [18, -2, Math.PI/6],
+        [22, -4, 0], [0, -2, 0], [-4, -6, 0], [-8, -10, Math.PI/4],
+        [-8, -14, 0], [-8, -18, 0], [-8, -22, 0], [-8, -26, 0],
+      ].map(([x, z, r], i) => (
+        <mesh key={i} rotation={[-Math.PI / 2, 0, r || 0]} position={[x, 0.02, z]} receiveShadow>
+          <planeGeometry args={[4, 5]} />
+          <meshStandardMaterial color="#2a2218" roughness={0.92} />
+        </mesh>
+      ))}
+    </>
+  )
+}
+
+// ─── MAIN EXPORT ───
+export default function GameWorld({ onSignActivate, onSignDeactivate, onKillPrompt, onKill }) {
+  const playerRef = useRef()
+  const keys = useRef({})
+  const joystick = useRef(null)
+  const zombieRefs = useRef({})
+  const nearZombies = useRef({})
+  const currentSign = useRef(null)
+
+  // Keyboard
+  useEffect(() => {
+    const down = (e) => { keys.current[e.code] = true; if (e.code === 'KeyF') handleKill() }
+    const up = (e) => { keys.current[e.code] = false }
+    window.addEventListener('keydown', down)
+    window.addEventListener('keyup', up)
+    return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up) }
+  }, [])
+
+  const handleKill = useCallback(() => {
+    if (onKill) onKill()
+  }, [onKill])
+
+  const handleNearSign = useCallback((sign) => {
+    if (sign && sign !== currentSign.current) {
+      currentSign.current = sign
+      onSignActivate(sign)
+    } else if (!sign && currentSign.current) {
+      currentSign.current = null
+      onSignDeactivate()
+    }
+  }, [onSignActivate, onSignDeactivate])
+
+  const handleZombieNear = useCallback((id, near) => {
+    nearZombies.current[id] = near
+    const anyNear = Object.values(nearZombies.current).some(v => v)
+    onKillPrompt(anyNear)
+  }, [onKillPrompt])
+
+  // Expose joystick setter
+  useEffect(() => {
+    window.__gameSetJoystick = (x, y) => { joystick.current = { x, y } }
+    window.__gameClearJoystick = () => { joystick.current = null }
+    window.__gameKill = handleKill
+  }, [handleKill])
+
+  return (
+    <Canvas
+      shadows
+      camera={{ position: [0, 8, 38], fov: 55 }}
+      style={{ position: 'absolute', inset: 0 }}
+      gl={{ antialias: true, toneMappingExposure: 0.8 }}
+    >
+      {/* Atmosphere */}
+      <fog attach="fog" args={['#0a1620', 15, 55]} />
+      <ambientLight intensity={0.15} color="#8aa8c0" />
+      <directionalLight
+        position={[10, 15, 5]}
+        intensity={0.3}
+        color="#ffa060"
+        castShadow
+        shadow-mapSize={[1024, 1024]}
+        shadow-camera-left={-30}
+        shadow-camera-right={30}
+        shadow-camera-top={30}
+        shadow-camera-bottom={-30}
+      />
+      <pointLight position={[0, 8, 28]} color="#ff6b35" intensity={0.4} distance={15} />
+      <hemisphereLight intensity={0.1} groundColor="#0a0e14" color="#1a3050" />
+
+      <Suspense fallback={null}>
+        <Ground />
+        <Environment />
+        <Stars radius={100} depth={50} count={2000} factor={3} fade speed={0.5} />
+
+        {/* Sign poles */}
+        {LANDMARKS.map(lm => (
+          <SignPole
+            key={lm.id}
+            position={lm.pos}
+            label={lm.label}
+            isNear={currentSign.current?.id === lm.id}
+          />
+        ))}
+
+        {/* Player */}
+        <Player
+          playerRef={playerRef}
+          keys={keys}
+          joystick={joystick}
+          onNearSign={handleNearSign}
+          onNearZombie={() => {}}
+        />
+
+        {/* Zombies */}
+        {ZOMBIE_SPAWNS.map((z, i) => (
+          <ZombieNPC
+            key={i}
+            id={i}
+            spawn={z}
+            playerRef={playerRef}
+            onNear={handleZombieNear}
+          />
+        ))}
+
+        <ThirdPersonCamera target={playerRef} />
+
+        {/* Ambient particles */}
+        <Sparkles count={80} scale={[60, 15, 60]} size={1.5} speed={0.2} color="#2a4a5a" opacity={0.3} />
+      </Suspense>
+    </Canvas>
+  )
+}

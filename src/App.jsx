@@ -1,15 +1,14 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
-import { GameEngine } from './game/Engine.js'
-import Joystick from './components/Joystick.jsx'
+import { useState, useCallback } from 'react'
+import GameWorld from './world/GameWorld.jsx'
 import DetailPopup from './components/DetailPopup.jsx'
+import Joystick from './components/Joystick.jsx'
 import HUD from './components/HUD.jsx'
 
 export default function App() {
-  const canvasRef = useRef(null)
-  const engineRef = useRef(null)
   const [activeLandmark, setActiveLandmark] = useState(null)
   const [showKillPrompt, setShowKillPrompt] = useState(false)
   const [started, setStarted] = useState(false)
+  const [kills, setKills] = useState(0)
 
   const handleSignActivate = useCallback((landmark) => {
     setActiveLandmark(landmark)
@@ -23,31 +22,8 @@ export default function App() {
     setShowKillPrompt(show)
   }, [])
 
-  useEffect(() => {
-    if (!started || !canvasRef.current) return
-
-    const engine = new GameEngine(
-      canvasRef.current,
-      handleSignActivate,
-      handleSignDeactivate,
-      handleKillPrompt
-    )
-    engineRef.current = engine
-    engine.start()
-
-    return () => engine.stop()
-  }, [started, handleSignActivate, handleSignDeactivate, handleKillPrompt])
-
-  const handleJoystickMove = useCallback((x, y) => {
-    if (engineRef.current) engineRef.current.setJoystick(x, y)
-  }, [])
-
-  const handleJoystickStop = useCallback(() => {
-    if (engineRef.current) engineRef.current.clearJoystick()
-  }, [])
-
   const handleKill = useCallback(() => {
-    if (engineRef.current) engineRef.current.tryKill()
+    setKills(k => k + 1)
   }, [])
 
   if (!started) {
@@ -56,15 +32,15 @@ export default function App() {
 
   return (
     <div style={{ width: '100vw', height: '100vh', overflow: 'hidden', background: '#0a0e14', cursor: 'crosshair' }}>
-      <canvas ref={canvasRef} style={{ display: 'block', width: '100%', height: '100%' }} />
-      <HUD showKillPrompt={showKillPrompt} />
-      <DetailPopup landmark={activeLandmark} />
-      <Joystick
-        onMove={handleJoystickMove}
-        onStop={handleJoystickStop}
+      <GameWorld
+        onSignActivate={handleSignActivate}
+        onSignDeactivate={handleSignDeactivate}
+        onKillPrompt={handleKillPrompt}
         onKill={handleKill}
-        showKill={showKillPrompt}
       />
+      <HUD showKillPrompt={showKillPrompt} kills={kills} />
+      <DetailPopup landmark={activeLandmark} />
+      <Joystick showKill={showKillPrompt} />
     </div>
   )
 }
@@ -73,7 +49,7 @@ function StartScreen({ onStart }) {
   const [bootLines, setBootLines] = useState([])
   const [ready, setReady] = useState(false)
 
-  useEffect(() => {
+  useState(() => {
     const lines = [
       '> INITIALIZING WASTELAND ENGINE...',
       '> LOADING MAP: SECTOR_7...',
@@ -94,7 +70,7 @@ function StartScreen({ onStart }) {
       }
     }, 350)
     return () => clearInterval(timer)
-  }, [])
+  })
 
   return (
     <div style={{

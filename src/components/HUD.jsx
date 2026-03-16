@@ -1,84 +1,76 @@
-export default function HUD({ showKillPrompt }) {
+export default function HUD({ showKillPrompt, kills = 0 }) {
   return (
     <>
-      {/* Top-left title */}
+      {/* Kill counter */}
       <div style={{
-        position: 'fixed', top: 16, left: 20, zIndex: 50,
-        pointerEvents: 'none',
+        position: 'fixed',
+        top: 16,
+        right: 20,
+        fontFamily: "'Share Tech Mono', monospace",
+        fontSize: 13,
+        color: 'rgba(0, 200, 180, 0.6)',
+        letterSpacing: 2,
+        textShadow: '0 0 10px rgba(0, 200, 180, 0.3)',
+        zIndex: 100,
       }}>
-        <div style={{
-          fontFamily: "'Share Tech Mono', monospace",
-          fontSize: 12,
-          color: 'rgba(0, 200, 180, 0.5)',
-          letterSpacing: 3,
-        }}>
-          RAMESH REDDY — PORTFOLIO
-        </div>
+        KILLS: {kills}
       </div>
 
-      {/* Controls hint (desktop) */}
+      {/* Controls hint */}
       <div style={{
-        position: 'fixed', top: 16, right: 20, zIndex: 50,
-        pointerEvents: 'none',
+        position: 'fixed',
+        bottom: 16,
+        left: '50%',
+        transform: 'translateX(-50%)',
         fontFamily: "'Share Tech Mono', monospace",
         fontSize: 10,
-        color: 'rgba(0, 200, 180, 0.3)',
+        color: 'rgba(0, 200, 180, 0.25)',
         letterSpacing: 1,
-        textAlign: 'right',
-        lineHeight: 1.8,
+        textAlign: 'center',
+        zIndex: 100,
+        pointerEvents: 'none',
       }}>
-        WASD / ARROWS — MOVE<br />
-        F — INTERACT / KILL
+        WASD — MOVE &nbsp;·&nbsp; F — KILL
       </div>
 
       {/* Kill prompt */}
       {showKillPrompt && (
         <div style={{
           position: 'fixed',
-          bottom: '40%',
+          top: '50%',
           left: '50%',
-          transform: 'translateX(-50%)',
-          zIndex: 80,
-          pointerEvents: 'none',
+          transform: 'translate(-50%, -50%)',
           fontFamily: "'Share Tech Mono', monospace",
-          fontSize: 13,
-          color: 'rgba(255, 100, 60, 0.85)',
-          letterSpacing: 2,
-          textShadow: '0 0 10px rgba(255, 100, 60, 0.4)',
-          animation: 'bob-prompt 1.5s ease-in-out infinite',
-          background: 'rgba(10, 15, 20, 0.7)',
-          padding: '6px 16px',
-          borderRadius: 8,
-          border: '1px solid rgba(255, 100, 60, 0.3)',
+          fontSize: 16,
+          color: '#ff6644',
+          letterSpacing: 3,
+          textShadow: '0 0 15px rgba(255, 100, 60, 0.5)',
+          zIndex: 100,
+          pointerEvents: 'none',
+          animation: 'killPulse 1s ease-in-out infinite',
         }}>
           PRESS F TO KILL
         </div>
       )}
 
-      {/* Minimap */}
+      {/* M-7 unit indicator */}
       <div style={{
-        position: 'fixed', bottom: 16, right: 16, zIndex: 50,
-        width: 80, height: 100,
-        background: 'rgba(8, 14, 22, 0.8)',
-        border: '1px solid rgba(0, 200, 180, 0.2)',
-        borderRadius: 6,
-        pointerEvents: 'none',
-        overflow: 'hidden',
+        position: 'fixed',
+        top: 16,
+        left: 20,
+        fontFamily: "'Share Tech Mono', monospace",
+        fontSize: 11,
+        color: 'rgba(0, 200, 180, 0.4)',
+        letterSpacing: 2,
+        zIndex: 100,
       }}>
-        <div style={{
-          fontFamily: "'Share Tech Mono', monospace",
-          fontSize: 7,
-          color: 'rgba(0, 200, 180, 0.4)',
-          textAlign: 'center',
-          padding: '2px 0',
-          letterSpacing: 1,
-        }}>MAP</div>
+        M-7 UNIT ACTIVE
       </div>
 
       <style>{`
-        @keyframes bob-prompt {
-          0%, 100% { transform: translateX(-50%) translateY(0); }
-          50% { transform: translateX(-50%) translateY(-4px); }
+        @keyframes killPulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
         }
       `}</style>
     </>

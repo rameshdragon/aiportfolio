@@ -1,11 +1,11 @@
 import { useRef, useCallback, useEffect, useState } from 'react'
 
-export default function Joystick({ onMove, onStop, onKill, showKill }) {
-  const joyRef = useRef(null)
-  const [active, setActive] = useState(false)
+export default function Joystick({ showKill }) {
   const [isMobile, setIsMobile] = useState(false)
-  const stickPos = useRef({ x: 0, y: 0 })
-  const centerRef = useRef({ x: 0, y: 0 })
+  const stickRef = useRef(null)
+  const baseRef = useRef(null)
+  const activeTouch = useRef(null)
+  const originRef = useRef({ x: 0, y: 0 })
 
   useEffect(() => {
     const check = () => setIsMobile('ontouchstart' in window || navigator.maxTouchPoints > 0)
@@ -14,133 +14,160 @@ export default function Joystick({ onMove, onStop, onKill, showKill }) {
     return () => window.removeEventListener('resize', check)
   }, [])
 
-  const handleStart = useCallback((e) => {
-    e.preventDefault()
-    const rect = joyRef.current.getBoundingClientRect()
-    centerRef.current = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
-    setActive(true)
-    handleMove(e)
+  const handleTouchStart = useCallback((e) => {
+    if (activeTouch.current !== null) return
+    const touch = e.touches[0]
+    activeTouch.current = touch.identifier
+    const rect = baseRef.current.getBoundingClientRect()
+    originRef.current = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
   }, [])
 
-  const handleMove = useCallback((e) => {
-    if (!joyRef.current) return
-    const touch = e.touches ? e.touches[0] : e
-    const dx = touch.clientX - centerRef.current.x
-    const dy = touch.clientY - centerRef.current.y
-    const dist = Math.sqrt(dx * dx + dy * dy)
-    const maxDist = 45
-    const clamped = Math.min(dist, maxDist)
-    const angle = Math.atan2(dy, dx)
-    const nx = (Math.cos(angle) * clamped) / maxDist
-    const ny = (Math.sin(angle) * clamped) / maxDist
-    stickPos.current = { x: nx, y: ny }
-    onMove(nx, ny)
-  }, [onMove])
+  const handleTouchMove = useCallback((e) => {
+    for (let i = 0; i < e.touches.length; i++) {
+      const touch = e.touches[i]
+      if (touch.identifier === activeTouch.current) {
+        const dx = touch.clientX - originRef.current.x
+        const dy = touch.clientY - originRef.current.y
+        const maxDist = 40
+        const dist = Math.min(Math.sqrt(dx * dx + dy * dy), maxDist)
+        const angle = Math.atan2(dy, dx)
+        const nx = Math.cos(angle) * dist
+        const ny = Math.sin(angle) * dist
 
-  const handleEnd = useCallback(() => {
-    setActive(false)
-    stickPos.current = { x: 0, y: 0 }
-    onStop()
-  }, [onStop])
+        if (stickRef.current) {
+          stickRef.current.style.transform = `translate(${nx}px, ${ny}px)`
+        }
+
+        // Normalize to -1..1
+        const jx = nx / maxDist
+        const jy = -ny / maxDist // invert Y for game coords
+        if (window.__gameSetJoystick) {
+          window.__gameSetJoystick(jx, jy)
+        }
+        break
+      }
+    }
+  }, [])
+
+  const handleTouchEnd = useCallback((e) => {
+    let found = false
+    for (let i = 0; i < e.touches.length; i++) {
+      if (e.touches[i].identifier === activeTouch.current) {
+        found = true
+        break
+      }
+    }
+    if (!found) {
+      activeTouch.current = null
+      if (stickRef.current) {
+        stickRef.current.style.transform = 'translate(0px, 0px)'
+      }
+      if (window.__gameClearJoystick) {
+        window.__gameClearJoystick()
+      }
+    }
+  }, [])
+
+  const handleKill = useCallback(() => {
+    if (window.__gameKill) {
+      window.__gameKill()
+    }
+  }, [])
 
   if (!isMobile) return null
 
   return (
-    <div style={{
-      position: 'fixed',
-      bottom: 0, left: 0, right: 0,
-      zIndex: 100,
-      pointerEvents: 'none',
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'flex-end',
-      padding: '0 24px 30px',
-    }}>
-      {/* D-pad / Joystick */}
+    <>
+      {/* Joystick */}
       <div
-        ref={joyRef}
-        onTouchStart={handleStart}
-        onTouchMove={handleMove}
-        onTouchEnd={handleEnd}
+        ref={baseRef}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
         style={{
-          width: 130,
-          height: 130,
+          position: 'fixed',
+          bottom: 40,
+          left: 40,
+          width: 120,
+          height: 120,
           borderRadius: '50%',
-          background: 'rgba(10, 18, 28, 0.75)',
+          background: 'rgba(0, 200, 180, 0.1)',
           border: '2px solid rgba(0, 200, 180, 0.3)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          pointerEvents: 'all',
-          position: 'relative',
-          boxShadow: '0 0 20px rgba(0, 200, 180, 0.1)',
+          zIndex: 200,
+          touchAction: 'none',
         }}
       >
-        {/* Direction indicators */}
-        {['▲', '▼', '◄', '►'].map((arrow, i) => {
-          const positions = [
-            { top: 8, left: '50%', transform: 'translateX(-50%)' },
-            { bottom: 8, left: '50%', transform: 'translateX(-50%)' },
-            { left: 8, top: '50%', transform: 'translateY(-50%)' },
-            { right: 8, top: '50%', transform: 'translateY(-50%)' },
-          ]
-          return (
-            <span key={i} style={{
-              position: 'absolute',
-              ...positions[i],
-              color: 'rgba(0, 200, 180, 0.4)',
-              fontSize: 14,
-              fontFamily: 'monospace',
-              pointerEvents: 'none',
-            }}>{arrow}</span>
-          )
-        })}
-        {/* Stick knob */}
-        <div style={{
-          width: 44,
-          height: 44,
-          borderRadius: '50%',
-          background: active
-            ? 'rgba(0, 200, 180, 0.4)'
-            : 'rgba(0, 200, 180, 0.2)',
-          border: '2px solid rgba(0, 200, 180, 0.6)',
-          transform: `translate(${stickPos.current.x * 35}px, ${stickPos.current.y * 35}px)`,
-          transition: active ? 'none' : 'transform 0.15s',
-          boxShadow: active ? '0 0 15px rgba(0, 200, 180, 0.4)' : 'none',
-        }} />
+        <div
+          ref={stickRef}
+          style={{
+            width: 50,
+            height: 50,
+            borderRadius: '50%',
+            background: 'rgba(0, 200, 180, 0.4)',
+            border: '2px solid rgba(0, 200, 180, 0.6)',
+            boxShadow: '0 0 15px rgba(0, 200, 180, 0.3)',
+            transition: 'transform 0.05s',
+          }}
+        />
       </div>
 
       {/* Kill button */}
       {showKill && (
         <button
-          onTouchStart={(e) => { e.preventDefault(); onKill() }}
+          onTouchStart={handleKill}
           style={{
-            width: 70,
-            height: 70,
+            position: 'fixed',
+            bottom: 60,
+            right: 40,
+            width: 80,
+            height: 80,
             borderRadius: '50%',
-            background: 'rgba(180, 40, 30, 0.7)',
-            border: '2px solid rgba(255, 80, 50, 0.8)',
-            color: '#fff',
-            fontFamily: "'Orbitron', monospace",
-            fontSize: 11,
-            fontWeight: 'bold',
-            letterSpacing: 1,
-            pointerEvents: 'all',
+            background: 'rgba(200, 50, 50, 0.3)',
+            border: '2px solid rgba(255, 80, 80, 0.6)',
+            color: '#ff6644',
+            fontFamily: "'Share Tech Mono', monospace",
+            fontSize: 12,
+            letterSpacing: 2,
             cursor: 'pointer',
-            boxShadow: '0 0 20px rgba(255, 80, 50, 0.3)',
-            animation: 'pulse-kill 1.5s ease-in-out infinite',
+            zIndex: 200,
+            touchAction: 'none',
+            boxShadow: '0 0 20px rgba(255, 80, 80, 0.3)',
           }}
         >
           KILL
         </button>
       )}
 
-      <style>{`
-        @keyframes pulse-kill {
-          0%, 100% { transform: scale(1); box-shadow: 0 0 20px rgba(255, 80, 50, 0.3); }
-          50% { transform: scale(1.08); box-shadow: 0 0 30px rgba(255, 80, 50, 0.5); }
-        }
-      `}</style>
-    </div>
+      {/* Interact button (always visible on mobile) */}
+      <button
+        onTouchStart={() => {
+          // Simulate F key press for sign interaction
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f' }))
+        }}
+        style={{
+          position: 'fixed',
+          bottom: 160,
+          right: 40,
+          width: 60,
+          height: 60,
+          borderRadius: '50%',
+          background: 'rgba(0, 200, 180, 0.15)',
+          border: '2px solid rgba(0, 200, 180, 0.4)',
+          color: '#00c8b4',
+          fontFamily: "'Share Tech Mono', monospace",
+          fontSize: 11,
+          letterSpacing: 1,
+          cursor: 'pointer',
+          zIndex: 200,
+          touchAction: 'none',
+          boxShadow: '0 0 15px rgba(0, 200, 180, 0.2)',
+        }}
+      >
+        READ
+      </button>
+    </>
   )
 }
