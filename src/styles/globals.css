@@ -1,0 +1,56 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;600;700&family=Share+Tech+Mono&display=swap');
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --cyan: #00d4ff;
+  --cyan2: #00ffcc;
+  --purple: #7b2fff;
+  --pink: #ff2d78;
+  --bg: #000408;
+  --card-bg: rgba(0, 10, 30, 0.82);
+  --glow: 0 0 20px rgba(0,212,255,0.4), 0 0 60px rgba(0,212,255,0.15);
+  --glow2: 0 0 30px rgba(0,212,255,0.6), 0 0 80px rgba(0,212,255,0.25);
+}
+
+html, body { width: 100%; height: 100%; background: var(--bg); overflow: hidden; }
+#root { width: 100%; height: 100%; }
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: rgba(0,0,0,0.3); }
+::-webkit-scrollbar-thumb { background: var(--cyan); border-radius: 2px; }
+
+.font-orbitron { font-family: 'Orbitron', sans-serif; }
+.font-rajdhani { font-family: 'Rajdhani', sans-serif; }
+.font-mono { font-family: 'Share Tech Mono', monospace; }
+
+@keyframes breathe {
+  0%, 100% { box-shadow: 0 0 10px rgba(0,212,255,0.15), 0 0 25px rgba(0,212,255,0.04); }
+  50% { box-shadow: 0 0 26px rgba(0,212,255,0.45), 0 0 55px rgba(0,212,255,0.16); }
+}
+@keyframes glitch {
+  0%, 89%, 100% { clip-path: none; transform: none; }
+  90% { clip-path: polygon(0 18%,100% 18%,100% 28%,0 28%); transform: translate(-4px,0); }
+  91% { clip-path: polygon(0 58%,100% 58%,100% 68%,0 68%); transform: translate(4px,0); }
+  92% { clip-path: none; transform: none; }
+}
+@keyframes scanline {
+  0% { top: -4px; opacity: 0.8; }
+  100% { top: 100%; opacity: 0; }
+}
+@keyframes float-y {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-12px); }
+}
+@keyframes pulse-ring {
+  0% { transform: scale(0.85); opacity: 1; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes neon-flicker {
+  0%, 19%, 21%, 23%, 25%, 54%, 56%, 100% { opacity: 1; }
+  20%, 24%, 55% { opacity: 0.4; }
+}
