@@ -12,15 +12,9 @@ const MODELS = {
   bushes:      'https://static.poly.pizza/11bcb3a1-5901-402c-9863-75988b9e21d8.glb',
 }
 
-// Target max-dimension (meters)
-const TARGET = {
-  deadtree:    6,
-  birch:       7,
-  grasspatch:  3,
-  grass:       2,
-  grassyellow: 2,
-  bushes:      3,
-}
+// Target HEIGHT (Y) for trees; target MAX dimension for ground cover
+const TARGET_HEIGHT = { deadtree: 8, birch: 9 }
+const TARGET_MAX   = { grasspatch: 2.5, grass: 1.8, grassyellow: 1.8, bushes: 2.8 }
 
 Object.values(MODELS).forEach(url => useGLTF.preload(url))
 
@@ -45,15 +39,23 @@ export function PolyVeg({ type = 'deadtree', position, rotation = 0, color }) {
     const box = new THREE.Box3().setFromObject(c)
     const size = new THREE.Vector3()
     box.getSize(size)
-    const maxDim = Math.max(size.x, size.y, size.z)
-    const s = maxDim > 0 ? TARGET[type] / maxDim : 1
+
+    // Trees → scale to target height; ground cover → scale to max dimension
+    const isTree = type === 'deadtree' || type === 'birch'
+    const dim = isTree ? size.y : Math.max(size.x, size.y, size.z)
+    const target = isTree ? TARGET_HEIGHT[type] : TARGET_MAX[type]
+    const s = dim > 0 ? target / dim : 1
     const yOff = -box.min.y * s
 
     return { clone: c, autoScale: s, yOffset: yOff }
   }, [scene, color, type])
 
   return (
-    <group position={[position[0], position[1] + yOffset, position[2]]} rotation={[0, rotation, 0]} scale={autoScale}>
+    <group
+      position={[position[0], (position[1] ?? 0) + yOffset, position[2]]}
+      rotation={[0, rotation, 0]}
+      scale={autoScale}
+    >
       <primitive object={clone} />
     </group>
   )

@@ -11,13 +11,13 @@ const MODELS = {
   cabin:     'https://static.poly.pizza/9f69cf1b-e9f0-495a-9f68-0dab4bffd6d2.glb',
 }
 
-// Target max-dimension (meters) for each model type
-const TARGET = {
-  apartment: 12,
-  large:     16,
-  houses:    10,
-  fantasy:   14,
-  cabin:      8,
+// Scale buildings to target HEIGHT (Y) so they look tall
+const TARGET_HEIGHT = {
+  apartment: 14,
+  large:     18,
+  houses:    11,
+  fantasy:   16,
+  cabin:      9,
 }
 
 Object.values(MODELS).forEach(url => useGLTF.preload(url))
@@ -43,15 +43,19 @@ export function PolyBuilding({ type = 'apartment', position, rotation = 0, color
     const box = new THREE.Box3().setFromObject(c)
     const size = new THREE.Vector3()
     box.getSize(size)
-    const maxDim = Math.max(size.x, size.y, size.z)
-    const s = maxDim > 0 ? TARGET[type] / maxDim : 1
-    const yOff = -box.min.y * s   // shift so base sits at y=0
+    // Scale to target height so buildings look properly tall
+    const s = size.y > 0 ? TARGET_HEIGHT[type] / size.y : 1
+    const yOff = -box.min.y * s
 
     return { clone: c, autoScale: s, yOffset: yOff }
   }, [scene, color, type])
 
   return (
-    <group position={[position[0], position[1] + yOffset, position[2]]} rotation={[0, rotation, 0]} scale={autoScale}>
+    <group
+      position={[position[0], (position[1] ?? 0) + yOffset, position[2]]}
+      rotation={[0, rotation, 0]}
+      scale={autoScale}
+    >
       <primitive object={clone} />
     </group>
   )

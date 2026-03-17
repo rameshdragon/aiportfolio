@@ -1,79 +1,91 @@
-import { useRef, useMemo } from 'react'
+import { useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 
-// Post-apocalyptic ground with cracked road paths
 export function Ground() {
   return (
     <group>
-      {/* Main ground plane */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow>
-        <planeGeometry args={[200, 200]} />
-        <meshStandardMaterial color="#1a1e22" roughness={0.95} />
+        <planeGeometry args={[400, 400]} />
+        <meshStandardMaterial color="#b49260" roughness={0.92} />
       </mesh>
     </group>
   )
 }
 
-// Road segment
-export function Road({ position, size = [4, 0.05, 4], rotation = 0 }) {
+export function Road({ position, size = [6, 0.05, 6], rotation = 0 }) {
   return (
     <group position={position} rotation={[0, rotation, 0]}>
       <mesh receiveShadow position={[0, 0.02, 0]}>
         <boxGeometry args={size} />
-        <meshStandardMaterial color="#2a2218" roughness={0.9} />
-      </mesh>
-      {/* Road lines */}
-      <mesh position={[0, 0.06, 0]}>
-        <boxGeometry args={[0.1, 0.01, size[2] * 0.8]} />
-        <meshStandardMaterial color="#3d3525" roughness={0.8} />
+        <meshStandardMaterial color="#8a7055" roughness={0.88} />
       </mesh>
     </group>
   )
 }
 
-// Water area with animated surface
+// Wind-animated water with ripples
 export function WaterArea({ position = [0, 0, 0], size = [30, 30] }) {
-  const meshRef = useRef()
-  const matRef = useRef()
+  const surfaceRef = useRef()
+  const posAttr    = useRef()
+  const segments   = 24
+
+  // Build a subdivided plane for wave animation
+  const geo = useRef(new THREE.PlaneGeometry(size[0], size[1], segments, segments))
 
   useFrame(({ clock }) => {
-    if (matRef.current) {
-      matRef.current.opacity = 0.7 + Math.sin(clock.getElapsedTime() * 0.5) * 0.05
+    const t = clock.getElapsedTime()
+    const g = geo.current
+    const pos = g.attributes.position
+
+    for (let i = 0; i <= segments; i++) {
+      for (let j = 0; j <= segments; j++) {
+        const idx = i * (segments + 1) + j
+        const x = pos.getX(idx)
+        const z = pos.getY(idx)   // Y in local plane = Z in world
+        // Composite wave = wind ripples + swell
+        const wave =
+          Math.sin(x * 0.4 + t * 2.1)  * 0.08 +
+          Math.sin(z * 0.5 + t * 1.7)  * 0.06 +
+          Math.sin((x + z) * 0.3 + t * 1.3) * 0.04
+        pos.setZ(idx, wave)
+      }
     }
+    pos.needsUpdate = true
+    g.computeVertexNormals()
   })
 
   return (
     <group position={position}>
       {/* Water bed */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.3, 0]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.5, 0]}>
         <planeGeometry args={size} />
-        <meshStandardMaterial color="#061820" roughness={0.8} />
+        <meshStandardMaterial color="#1a3040" roughness={0.9} />
       </mesh>
-      {/* Water surface */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]}>
-        <planeGeometry args={size} />
+
+      {/* Animated water surface */}
+      <mesh ref={surfaceRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.08, 0]}>
+        <primitive object={geo.current} attach="geometry" />
         <meshStandardMaterial
-          ref={matRef}
-          color="#0a3a4a"
+          color="#3a7a9a"
           transparent
-          opacity={0.75}
-          roughness={0.2}
+          opacity={0.8}
+          roughness={0.05}
           metalness={0.6}
+          envMapIntensity={0.8}
+          side={THREE.FrontSide}
         />
       </mesh>
-      {/* Debris in water */}
-      {Array.from({ length: 8 }, (_, i) => (
-        <mesh
-          key={i}
-          position={[
-            (Math.sin(i * 4.3) * size[0] * 0.35),
-            -0.02,
-            (Math.cos(i * 3.1) * size[1] * 0.35),
-          ]}
-        >
-          <boxGeometry args={[0.3 + Math.random() * 0.5, 0.1, 0.2 + Math.random() * 0.4]} />
-          <meshStandardMaterial color="#2a3a30" roughness={0.9} />
+
+      {/* Wind foam streaks on surface */}
+      {Array.from({ length: 6 }, (_, i) => (
+        <mesh key={i} position={[
+          Math.sin(i * 1.1) * size[0] * 0.3,
+          -0.06,
+          Math.cos(i * 0.9) * size[1] * 0.3,
+        ]} rotation={[-Math.PI / 2, 0, i * 0.8]}>
+          <planeGeometry args={[0.15, size[0] * 0.4 + Math.sin(i) * 2]} />
+          <meshStandardMaterial color="#c8e8f0" transparent opacity={0.18} roughness={1} />
         </mesh>
       ))}
     </group>
