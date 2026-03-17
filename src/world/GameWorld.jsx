@@ -47,8 +47,9 @@ const COLLIDERS = [
   { pos: [-20, 0, -14], size: [4, 4, 4] },
   { pos: [14, 0, -18], size: [5, 5, 5] },
   { pos: [0, 0, -14], size: [6, 8, 6] },
-  // Water area (top-left)
-  { pos: [-14, 0, -30], size: [20, 2, 14] },
+  // Water area — split to leave a ~10-unit gap around x=-8 so player can reach CONTACT ME
+  { pos: [-22, 0, -30], size: [8, 2, 14] },   // far-left water block
+  { pos: [-2, 0, -30], size: [10, 2, 14] },    // right water block
 ]
 
 function checkCollision(x, z, colliders, radius = 0.5) {
@@ -65,23 +66,50 @@ function checkCollision(x, z, colliders, radius = 0.5) {
 // ─── THIRD PERSON CAMERA ───
 function ThirdPersonCamera({ target }) {
   const { camera } = useThree()
-  const offset = useRef(new THREE.Vector3(0, 6, 8))
-  const lookAt = useRef(new THREE.Vector3())
+  const yaw = useRef(Math.PI)    // horizontal angle – starts behind player
+  const pitch = useRef(0.45)     // vertical angle
+  const isDragging = useRef(false)
+  const lastMouse = useRef({ x: 0, y: 0 })
+  const RADIUS = 11
+
+  useEffect(() => {
+    const onDown = (e) => {
+      isDragging.current = true
+      lastMouse.current = { x: e.clientX, y: e.clientY }
+    }
+    const onUp = () => { isDragging.current = false }
+    const onMove = (e) => {
+      if (!isDragging.current) return
+      const dx = e.clientX - lastMouse.current.x
+      const dy = e.clientY - lastMouse.current.y
+      lastMouse.current = { x: e.clientX, y: e.clientY }
+      yaw.current -= dx * 0.007
+      pitch.current = Math.max(0.08, Math.min(1.25, pitch.current + dy * 0.005))
+    }
+    const noCtx = (e) => e.preventDefault()
+    window.addEventListener('mousedown', onDown)
+    window.addEventListener('mouseup', onUp)
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('contextmenu', noCtx)
+    return () => {
+      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('mouseup', onUp)
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('contextmenu', noCtx)
+    }
+  }, [])
 
   useFrame(() => {
     if (!target.current) return
     const px = target.current.position.x
     const pz = target.current.position.z
-
-    const desiredPos = new THREE.Vector3(
-      px + offset.current.x,
-      offset.current.y,
-      pz + offset.current.z
-    )
-
-    camera.position.lerp(desiredPos, 0.06)
-    lookAt.current.set(px, 1, pz)
-    camera.lookAt(lookAt.current)
+    const cosP = Math.cos(pitch.current)
+    const sinP = Math.sin(pitch.current)
+    const desiredX = px + RADIUS * Math.sin(yaw.current) * cosP
+    const desiredY = 1.5 + RADIUS * sinP
+    const desiredZ = pz + RADIUS * Math.cos(yaw.current) * cosP
+    camera.position.lerp(new THREE.Vector3(desiredX, desiredY, desiredZ), 0.07)
+    camera.lookAt(new THREE.Vector3(px, 1.5, pz))
   })
 
   return null
@@ -159,7 +187,7 @@ function Player({ playerRef, keys, joystick, onNearSign, onNearZombie }) {
 }
 
 // ─── ZOMBIE NPC ───
-function ZombieNPC({ spawn, playerRef, onNear, id }) {
+function ZombieNPC({ spawn, playerRef, onNear, id, onRegisterKill }) {
   const ref = useRef()
   const [alive, setAlive] = useState(true)
   const [dying, setDying] = useState(false)
@@ -219,11 +247,10 @@ function ZombieNPC({ spawn, playerRef, onNear, id }) {
     deathProgress.current = 0
   }, [])
 
-  // Expose kill method
+  // Register kill function with parent
   useEffect(() => {
-    if (ref.current) ref.current.userData.kill = kill
-    if (ref.current) ref.current.userData.alive = alive
-  })
+    if (onRegisterKill) onRegisterKill(id, kill)
+  }, [id, kill, onRegisterKill])
 
   if (!alive && !dying) return null
 
@@ -318,22 +345,38 @@ export default function GameWorld({ onSignActivate, onSignDeactivate, onKillProm
   const playerRef = useRef()
   const keys = useRef({})
   const joystick = useRef(null)
-  const zombieRefs = useRef({})
+  const zombieKillFns = useRef({})
   const nearZombies = useRef({})
   const currentSign = useRef(null)
+  const handleKillRef = useRef(null)
+
+  const handleKill = useCallback(() => {
+    let killed = false
+    for (const [id, near] of Object.entries(nearZombies.current)) {
+      if (near && zombieKillFns.current[id]) {
+        zombieKillFns.current[id]()
+        nearZombies.current[id] = false
+        killed = true
+      }
+    }
+    if (killed) {
+      if (onKill) onKill()
+      const anyNear = Object.values(nearZombies.current).some(v => v)
+      onKillPrompt(anyNear)
+    }
+  }, [onKill, onKillPrompt])
+
+  // Keep ref in sync so keydown handler always has the latest version
+  useEffect(() => { handleKillRef.current = handleKill }, [handleKill])
 
   // Keyboard
   useEffect(() => {
-    const down = (e) => { keys.current[e.code] = true; if (e.code === 'KeyF') handleKill() }
+    const down = (e) => { keys.current[e.code] = true; if (e.code === 'KeyF') handleKillRef.current?.() }
     const up = (e) => { keys.current[e.code] = false }
     window.addEventListener('keydown', down)
     window.addEventListener('keyup', up)
     return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up) }
   }, [])
-
-  const handleKill = useCallback(() => {
-    if (onKill) onKill()
-  }, [onKill])
 
   const handleNearSign = useCallback((sign) => {
     if (sign && sign !== currentSign.current) {
@@ -351,36 +394,40 @@ export default function GameWorld({ onSignActivate, onSignDeactivate, onKillProm
     onKillPrompt(anyNear)
   }, [onKillPrompt])
 
+  const handleRegisterKill = useCallback((id, fn) => {
+    zombieKillFns.current[id] = fn
+  }, [])
+
   // Expose joystick setter
   useEffect(() => {
     window.__gameSetJoystick = (x, y) => { joystick.current = { x, y } }
     window.__gameClearJoystick = () => { joystick.current = null }
-    window.__gameKill = handleKill
-  }, [handleKill])
+    window.__gameKill = () => handleKillRef.current?.()
+  }, [])
 
   return (
     <Canvas
       shadows
-      camera={{ position: [0, 8, 38], fov: 55 }}
+      camera={{ position: [0, 8, 38], fov: 70 }}
       style={{ position: 'absolute', inset: 0 }}
-      gl={{ antialias: true, toneMappingExposure: 0.8 }}
+      gl={{ antialias: true, toneMappingExposure: 1.6 }}
     >
       {/* Atmosphere */}
-      <fog attach="fog" args={['#0a1620', 15, 55]} />
-      <ambientLight intensity={0.15} color="#8aa8c0" />
+      <fog attach="fog" args={['#0a1620', 35, 90]} />
+      <ambientLight intensity={0.7} color="#8aa8c0" />
       <directionalLight
-        position={[10, 15, 5]}
-        intensity={0.3}
-        color="#ffa060"
+        position={[10, 20, 5]}
+        intensity={1.4}
+        color="#ffe8c0"
         castShadow
-        shadow-mapSize={[1024, 1024]}
-        shadow-camera-left={-30}
-        shadow-camera-right={30}
-        shadow-camera-top={30}
-        shadow-camera-bottom={-30}
+        shadow-mapSize={[2048, 2048]}
+        shadow-camera-left={-40}
+        shadow-camera-right={40}
+        shadow-camera-top={40}
+        shadow-camera-bottom={-40}
       />
-      <pointLight position={[0, 8, 28]} color="#ff6b35" intensity={0.4} distance={15} />
-      <hemisphereLight intensity={0.1} groundColor="#0a0e14" color="#1a3050" />
+      <pointLight position={[0, 8, 28]} color="#ff8855" intensity={1.2} distance={25} />
+      <hemisphereLight intensity={0.4} groundColor="#1a1e22" color="#4a7090" />
 
       <Suspense fallback={null}>
         <Ground />
@@ -414,6 +461,7 @@ export default function GameWorld({ onSignActivate, onSignDeactivate, onKillProm
             spawn={z}
             playerRef={playerRef}
             onNear={handleZombieNear}
+            onRegisterKill={handleRegisterKill}
           />
         ))}
 
