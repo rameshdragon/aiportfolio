@@ -500,6 +500,102 @@ function Environment() {
   )
 }
 
+// ─── DIRECTIONAL GUIDE — blue flowing chevrons every 15 s ───
+function DirectionalGuide({ playerRef }) {
+  const NUM     = 7
+  const SPACING = 3.2
+
+  const groupsRef   = useRef(Array.from({ length: NUM }, () => null))
+  const matsRef     = useRef(Array.from({ length: NUM }, () => null))
+  const timerRef    = useRef(0)
+  const showingRef  = useRef(false)
+  const phaseTimer  = useRef(0)
+
+  // First burst after 3 s, then every 15 s
+  useEffect(() => {
+    const t = setTimeout(() => { showingRef.current = true; phaseTimer.current = 0 }, 3000)
+    return () => clearTimeout(t)
+  }, [])
+
+  const chevronGeo = useMemo(() => {
+    const shape = new THREE.Shape()
+    shape.moveTo(-1.1, 0)
+    shape.lineTo(0,    1.45)
+    shape.lineTo(1.1,  0)
+    shape.lineTo(0.65, 0)
+    shape.lineTo(0,    0.82)
+    shape.lineTo(-0.65, 0)
+    shape.closePath()
+    return new THREE.ShapeGeometry(shape)
+  }, [])
+
+  useFrame((_, dt) => {
+    timerRef.current  += dt
+    phaseTimer.current += dt
+
+    // State machine: show 4 s → hide 15 s → repeat
+    if (showingRef.current  && phaseTimer.current > 4)  { showingRef.current = false; phaseTimer.current = 0 }
+    if (!showingRef.current && phaseTimer.current > 15) { showingRef.current = true;  phaseTimer.current = 0 }
+
+    if (!playerRef?.current) return
+    const px = playerRef.current.position.x
+    const pz = playerRef.current.position.z
+
+    // Nearest landmark (must be > 8 units away)
+    let nearestDist = Infinity, nearestPos = null
+    for (const lm of LANDMARKS) {
+      const dx = lm.pos[0] - px, dz = lm.pos[2] - pz
+      const d  = Math.sqrt(dx * dx + dz * dz)
+      if (d > 8 && d < nearestDist) { nearestDist = d; nearestPos = lm.pos }
+    }
+    if (!nearestPos) return
+
+    const ddx = nearestPos[0] - px, ddz = nearestPos[2] - pz
+    const len  = Math.sqrt(ddx * ddx + ddz * ddz)
+    const nx   = ddx / len, nz = ddz / len
+    const yaw  = Math.atan2(nx, nz)
+    const t    = timerRef.current
+    const show = showingRef.current
+
+    groupsRef.current.forEach((g, i) => {
+      if (!g) return
+      const dist = 2.8 + i * SPACING
+      g.position.set(px + nx * dist, 0.12, pz + nz * dist)
+      g.rotation.y = yaw
+
+      const mat = matsRef.current[i]
+      if (!mat) return
+      // Flowing wave toward target (i=0 nearest player, i=N-1 nearest target)
+      const wave        = Math.sin(t * 5 - i * 1.1)
+      const wantOpacity = show ? Math.max(0.18, 0.55 + wave * 0.45) : 0
+      const wantEmissive = show ? (1.6 + wave * 1.6) : 0
+      mat.opacity          = THREE.MathUtils.lerp(mat.opacity,          wantOpacity,  0.14)
+      mat.emissiveIntensity = THREE.MathUtils.lerp(mat.emissiveIntensity, wantEmissive, 0.14)
+    })
+  })
+
+  return (
+    <>
+      {Array.from({ length: NUM }, (_, i) => (
+        <group key={i} ref={el => { groupsRef.current[i] = el }}>
+          <mesh geometry={chevronGeo} rotation={[-Math.PI / 2, 0, 0]}>
+            <meshStandardMaterial
+              ref={el => { matsRef.current[i] = el }}
+              color="#00aaff"
+              emissive="#0088ff"
+              emissiveIntensity={0}
+              transparent
+              opacity={0}
+              side={THREE.DoubleSide}
+              depthWrite={false}
+            />
+          </mesh>
+        </group>
+      ))}
+    </>
+  )
+}
+
 // ─── MAIN EXPORT ───
 export default function GameWorld({ onSignActivate, onSignDeactivate, onKillPrompt, onKill, onPlayerMove, onNearPaper }) {
   const playerRef      = useRef()
@@ -602,6 +698,7 @@ export default function GameWorld({ onSignActivate, onSignDeactivate, onKillProm
         ))}
 
         <WindPapers playerRef={playerRef} onNearPaper={onNearPaper} />
+        <DirectionalGuide playerRef={playerRef} />
         <ThirdPersonCamera target={playerRef} cameraYaw={cameraYaw} />
 
         <Sparkles count={120} scale={[100, 20, 100]} size={2} speed={0.1} color="#e08030" opacity={0.25} />
