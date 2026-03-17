@@ -5,7 +5,8 @@ import * as THREE from 'three'
 import { Ground, WaterArea } from './Ground'
 import { PolyBuilding } from './PolyBuildings'
 import { PolyVeg } from './PolyVegetation'
-import { Car, PowerPole, Bridge, Rubble } from './Props'
+import { PolyProp } from './PolyProps'
+import { Rubble } from './Props'
 import { SignPole } from './SignPole'
 import { PlayerModel } from '../characters/PlayerModel'
 import { ZombieModel } from '../characters/ZombieModel'
@@ -286,12 +287,12 @@ function Environment() {
       <PolyBuilding type="cabin"     position={[4, 0, 26]}   rotation={0.3}  color="#a82838" />
       <PolyBuilding type="cabin"     position={[-14, 0, 18]} rotation={-0.5} color="#5838a8" />
 
-      {/* Cars */}
-      <Car position={[6, 0, 22]} rotation={0.4} color="#4a1a1a" />
-      <Car position={[-6, 0, 16]} rotation={-0.3} color="#2a2a3a" />
-      <Car position={[18, 0, -8]} rotation={1.2} color="#3a2a15" />
-      <Car position={[-10, 0, -4]} rotation={0.8} />
-      <Car position={[12, 0, 14]} rotation={-0.6} color="#2a3a2a" />
+      {/* Cars — alternating brokencar + rover, each unique color */}
+      <PolyProp type="brokencar" position={[6, 0, 22]}   rotation={0.4}  color="#6a3a1a" />
+      <PolyProp type="rover"     position={[-6, 0, 16]}  rotation={-0.3} color="#3a3a5a" />
+      <PolyProp type="brokencar" position={[18, 0, -8]}  rotation={1.2}  color="#5a4a20" />
+      <PolyProp type="rover"     position={[-10, 0, -4]} rotation={0.8}  color="#2a4a2a" />
+      <PolyProp type="brokencar" position={[12, 0, 14]}  rotation={-0.6} color="#4a2a40" />
 
       {/* Trees — deadtree + birch, each with unique colors */}
       <PolyVeg type="deadtree" position={[-14, 0, 2]}   rotation={0.4}  color="#a09080" />
@@ -312,14 +313,14 @@ function Environment() {
       <PolyVeg type="grassyellow" position={[2, 0, 16]}    rotation={0.5}  color="#b8a030" />
       <PolyVeg type="grassyellow" position={[-8, 0, -6]}   rotation={-0.6} color="#a07828" />
 
-      {/* Power poles */}
-      <PowerPole position={[2, 0, 20]} />
-      <PowerPole position={[-12, 0, 6]} />
-      <PowerPole position={[10, 0, -2]} />
-      <PowerPole position={[-8, 0, -16]} />
+      {/* Telephone poles */}
+      <PolyProp type="telepole" position={[2, 0, 20]}    rotation={0.1} />
+      <PolyProp type="telepole" position={[-12, 0, 6]}   rotation={-0.2} />
+      <PolyProp type="telepole" position={[10, 0, -2]}   rotation={0.3} />
+      <PolyProp type="telepole" position={[-8, 0, -16]}  rotation={0.0} />
 
       {/* Bridge over water */}
-      <Bridge position={[-6, -0.2, -24]} rotation={0} length={8} />
+      <PolyProp type="bridge" position={[-8, -0.3, -24]} rotation={Math.PI / 2} />
 
       {/* Rubble */}
       <Rubble position={[4, 0, 14]} />
