@@ -11,12 +11,14 @@ export function PlayerModel({ moving }) {
   const groupRef = useRef()
   const { scene, animations } = useGLTF(PLAYER_URL)
 
-  const { clone, autoScale } = useMemo(() => {
+  const { clone, autoScale, yOffset } = useMemo(() => {
     const c = SkeletonUtils.clone(scene)
     const box = new THREE.Box3().setFromObject(c)
     const h = box.max.y - box.min.y
-    const s = h > 0 ? 1.8 / h : 0.01   // scale to 1.8 m tall
-    return { clone: c, autoScale: s }
+    const s = h > 0 ? 1.8 / h : 0.01
+    // Shift up so the bottom of the model sits at y=0
+    const yOff = -box.min.y * s
+    return { clone: c, autoScale: s, yOffset: yOff }
   }, [scene])
 
   const { actions } = useAnimations(animations, groupRef)
@@ -35,7 +37,7 @@ export function PlayerModel({ moving }) {
   })
 
   return (
-    <group ref={groupRef} scale={autoScale}>
+    <group ref={groupRef} position={[0, yOffset, 0]} scale={autoScale}>
       <primitive object={clone} />
     </group>
   )

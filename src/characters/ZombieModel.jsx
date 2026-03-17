@@ -15,12 +15,14 @@ function ZombieInstance({ url, dying, deathProgress }) {
   const groupRef = useRef()
   const { scene, animations } = useGLTF(url)
 
-  const { clone, autoScale } = useMemo(() => {
+  const { clone, autoScale, yOffset } = useMemo(() => {
     const c = SkeletonUtils.clone(scene)
     const box = new THREE.Box3().setFromObject(c)
     const h = box.max.y - box.min.y
     const s = h > 0 ? 1.8 / h : 0.01
-    return { clone: c, autoScale: s }
+    // Lift so feet are at y = 0
+    const yOff = -box.min.y * s
+    return { clone: c, autoScale: s, yOffset: yOff }
   }, [scene])
 
   const { actions } = useAnimations(animations, groupRef)
@@ -31,8 +33,10 @@ function ZombieInstance({ url, dying, deathProgress }) {
     if (dying) {
       groupRef.current.rotation.x = deathProgress * 1.5
       groupRef.current.rotation.z = deathProgress * 0.5
-      groupRef.current.position.y = -deathProgress * 0.5
+      // Fall INTO ground relative to yOffset base
+      groupRef.current.position.y = yOffset - deathProgress * 0.8
     } else {
+      groupRef.current.position.y = yOffset
       groupRef.current.rotation.z = Math.sin(t * 2) * 0.06
       groupRef.current.rotation.x = 0.08
     }
