@@ -12,46 +12,48 @@ const MODELS = {
   bushes:      'https://static.poly.pizza/11bcb3a1-5901-402c-9863-75988b9e21d8.glb',
 }
 
-const DEFAULT_SCALE = {
-  deadtree:    0.012,
-  birch:       0.013,
-  grasspatch:  0.015,
-  grass:       0.014,
-  grassyellow: 0.014,
-  bushes:      0.013,
+// Target max-dimension (meters)
+const TARGET = {
+  deadtree:    6,
+  birch:       7,
+  grasspatch:  3,
+  grass:       2,
+  grassyellow: 2,
+  bushes:      3,
 }
 
 Object.values(MODELS).forEach(url => useGLTF.preload(url))
 
-export function PolyVeg({ type = 'deadtree', position, rotation = 0, scale, color }) {
+export function PolyVeg({ type = 'deadtree', position, rotation = 0, color }) {
   const { scene } = useGLTF(MODELS[type])
 
-  const clone = useMemo(() => {
+  const { clone, autoScale, yOffset } = useMemo(() => {
     const c = SkeletonUtils.clone(scene)
+
     if (color) {
       const tint = new THREE.Color(color)
-      const applyTint = (mat) => {
-        const m = mat.clone()
-        m.color.multiply(tint)
-        return m
-      }
       c.traverse(node => {
         if (node.isMesh) {
-          if (Array.isArray(node.material)) {
-            node.material = node.material.map(applyTint)
-          } else {
-            node.material = applyTint(node.material)
-          }
+          const applyTint = (mat) => { const m = mat.clone(); m.color.multiply(tint); return m }
+          node.material = Array.isArray(node.material)
+            ? node.material.map(applyTint)
+            : applyTint(node.material)
         }
       })
     }
-    return c
-  }, [scene, color])
 
-  const s = scale ?? DEFAULT_SCALE[type]
+    const box = new THREE.Box3().setFromObject(c)
+    const size = new THREE.Vector3()
+    box.getSize(size)
+    const maxDim = Math.max(size.x, size.y, size.z)
+    const s = maxDim > 0 ? TARGET[type] / maxDim : 1
+    const yOff = -box.min.y * s
+
+    return { clone: c, autoScale: s, yOffset: yOff }
+  }, [scene, color, type])
 
   return (
-    <group position={position} rotation={[0, rotation, 0]} scale={s}>
+    <group position={[position[0], position[1] + yOffset, position[2]]} rotation={[0, rotation, 0]} scale={autoScale}>
       <primitive object={clone} />
     </group>
   )

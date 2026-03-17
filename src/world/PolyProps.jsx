@@ -10,44 +10,46 @@ const MODELS = {
   rover:     'https://static.poly.pizza/7992e6b4-8add-45a9-86fd-f208237d293c.glb',
 }
 
-const DEFAULT_SCALE = {
-  bridge:    0.018,
-  telepole:  0.016,
-  brokencar: 0.013,
-  rover:     0.013,
+// Target max-dimension (meters)
+const TARGET = {
+  bridge:     12,
+  telepole:    8,
+  brokencar:   4,
+  rover:       4,
 }
 
 Object.values(MODELS).forEach(url => useGLTF.preload(url))
 
-export function PolyProp({ type = 'brokencar', position, rotation = 0, scale, color }) {
+export function PolyProp({ type = 'brokencar', position, rotation = 0, color }) {
   const { scene } = useGLTF(MODELS[type])
 
-  const clone = useMemo(() => {
+  const { clone, autoScale, yOffset } = useMemo(() => {
     const c = SkeletonUtils.clone(scene)
+
     if (color) {
       const tint = new THREE.Color(color)
-      const applyTint = (mat) => {
-        const m = mat.clone()
-        m.color.multiply(tint)
-        return m
-      }
       c.traverse(node => {
         if (node.isMesh) {
-          if (Array.isArray(node.material)) {
-            node.material = node.material.map(applyTint)
-          } else {
-            node.material = applyTint(node.material)
-          }
+          const applyTint = (mat) => { const m = mat.clone(); m.color.multiply(tint); return m }
+          node.material = Array.isArray(node.material)
+            ? node.material.map(applyTint)
+            : applyTint(node.material)
         }
       })
     }
-    return c
-  }, [scene, color])
 
-  const s = scale ?? DEFAULT_SCALE[type]
+    const box = new THREE.Box3().setFromObject(c)
+    const size = new THREE.Vector3()
+    box.getSize(size)
+    const maxDim = Math.max(size.x, size.y, size.z)
+    const s = maxDim > 0 ? TARGET[type] / maxDim : 1
+    const yOff = -box.min.y * s
+
+    return { clone: c, autoScale: s, yOffset: yOff }
+  }, [scene, color, type])
 
   return (
-    <group position={position} rotation={[0, rotation, 0]} scale={s}>
+    <group position={[position[0], position[1] + yOffset, position[2]]} rotation={[0, rotation, 0]} scale={autoScale}>
       <primitive object={clone} />
     </group>
   )

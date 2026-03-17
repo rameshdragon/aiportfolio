@@ -11,46 +11,47 @@ const MODELS = {
   cabin:     'https://static.poly.pizza/9f69cf1b-e9f0-495a-9f68-0dab4bffd6d2.glb',
 }
 
-Object.values(MODELS).forEach(url => useGLTF.preload(url))
-
-// Default scale per model type so they look reasonable in the scene
-const DEFAULT_SCALE = {
-  apartment: 0.012,
-  large:     0.014,
-  houses:    0.013,
-  fantasy:   0.011,
-  cabin:     0.010,
+// Target max-dimension (meters) for each model type
+const TARGET = {
+  apartment: 12,
+  large:     16,
+  houses:    10,
+  fantasy:   14,
+  cabin:      8,
 }
 
-export function PolyBuilding({ type = 'apartment', position, rotation = 0, scale, color }) {
+Object.values(MODELS).forEach(url => useGLTF.preload(url))
+
+export function PolyBuilding({ type = 'apartment', position, rotation = 0, color }) {
   const { scene } = useGLTF(MODELS[type])
 
-  const clone = useMemo(() => {
+  const { clone, autoScale, yOffset } = useMemo(() => {
     const c = SkeletonUtils.clone(scene)
+
     if (color) {
       const tint = new THREE.Color(color)
-      const applyTint = (mat) => {
-        const m = mat.clone()
-        m.color.multiply(tint)
-        return m
-      }
       c.traverse(node => {
         if (node.isMesh) {
-          if (Array.isArray(node.material)) {
-            node.material = node.material.map(applyTint)
-          } else {
-            node.material = applyTint(node.material)
-          }
+          const applyTint = (mat) => { const m = mat.clone(); m.color.multiply(tint); return m }
+          node.material = Array.isArray(node.material)
+            ? node.material.map(applyTint)
+            : applyTint(node.material)
         }
       })
     }
-    return c
-  }, [scene, color])
 
-  const s = scale ?? DEFAULT_SCALE[type]
+    const box = new THREE.Box3().setFromObject(c)
+    const size = new THREE.Vector3()
+    box.getSize(size)
+    const maxDim = Math.max(size.x, size.y, size.z)
+    const s = maxDim > 0 ? TARGET[type] / maxDim : 1
+    const yOff = -box.min.y * s   // shift so base sits at y=0
+
+    return { clone: c, autoScale: s, yOffset: yOff }
+  }, [scene, color, type])
 
   return (
-    <group position={position} rotation={[0, rotation, 0]} scale={s}>
+    <group position={[position[0], position[1] + yOffset, position[2]]} rotation={[0, rotation, 0]} scale={autoScale}>
       <primitive object={clone} />
     </group>
   )
