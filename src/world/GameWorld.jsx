@@ -3,7 +3,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Sky, Stars, Sparkles, Text, Billboard } from '@react-three/drei'
 import * as THREE from 'three'
 import { Ground, WaterArea } from './Ground'
-import { Building, Shack } from './Building'
+import { PolyBuilding } from './PolyBuildings'
 import { Car, DeadTree, Bush, PowerPole, Bridge, Rubble } from './Props'
 import { SignPole } from './SignPole'
 import { PlayerModel } from '../characters/PlayerModel'
@@ -265,20 +265,25 @@ function ZombieNPC({ spawn, playerRef, onNear, id, onRegisterKill }) {
 function Environment() {
   return (
     <>
-      {/* Buildings */}
-      <Building position={[-8, 0, 22]} size={[5, 4, 5]} damaged />
-      <Building position={[10, 0, 24]} size={[4, 6, 4]} color="#101820" />
-      <Building position={[-18, 0, 8]} size={[6, 5, 5]} damaged />
-      <Building position={[16, 0, 10]} size={[4, 4, 4]} color="#0e1622" />
-      <Building position={[-4, 0, 4]} size={[5, 7, 6]} color="#0d1520" damaged />
-      <Building position={[8, 0, -6]} size={[4, 5, 4]} damaged />
-      <Building position={[-12, 0, -10]} size={[5, 4, 5]} color="#101822" />
-      <Building position={[24, 0, 0]} size={[4, 6, 4]} color="#0e1520" />
-      <Building position={[-20, 0, -14]} size={[4, 4, 4]} damaged />
-      <Building position={[14, 0, -18]} size={[5, 5, 5]} color="#101820" damaged />
-      <Building position={[0, 0, -14]} size={[6, 8, 6]} color="#0d1520" />
-      <Shack position={[4, 0, 26]} rotation={0.3} />
-      <Shack position={[-14, 0, 18]} rotation={-0.5} />
+      {/* Buildings — 5 unique GLBs, each recolored so no duplicate type+color exists */}
+      {/* apartment: gray, rust, teal, navy */}
+      <PolyBuilding type="apartment" position={[-8, 0, 22]}  rotation={0.2}  color="#b0a898" />
+      <PolyBuilding type="apartment" position={[8, 0, -6]}   rotation={-0.3} color="#c04828" />
+      <PolyBuilding type="apartment" position={[0, 0, -14]}  rotation={0.1}  color="#38a888" />
+      <PolyBuilding type="apartment" position={[-12, 0, -10]} rotation={0.8} color="#2858b8" />
+      {/* large: steel-blue, amber */}
+      <PolyBuilding type="large"     position={[10, 0, 24]}  rotation={-0.1} color="#8898b0" />
+      <PolyBuilding type="large"     position={[24, 0, 0]}   rotation={0.5}  color="#c87828" />
+      {/* houses: olive, golden */}
+      <PolyBuilding type="houses"    position={[-18, 0, 8]}  rotation={0.4}  color="#788840" />
+      <PolyBuilding type="houses"    position={[16, 0, 10]}  rotation={-0.6} color="#c8a028" />
+      {/* fantasy: violet, cyan */}
+      <PolyBuilding type="fantasy"   position={[-4, 0, 4]}   rotation={0.3}  color="#7848c8" />
+      <PolyBuilding type="fantasy"   position={[-20, 0, -14]} rotation={-0.4} color="#28b8c8" />
+      {/* cabin: brown, crimson */}
+      <PolyBuilding type="cabin"     position={[14, 0, -18]} rotation={0.7}  color="#c07838" />
+      <PolyBuilding type="cabin"     position={[4, 0, 26]}   rotation={0.3}  color="#a82838" />
+      <PolyBuilding type="cabin"     position={[-14, 0, 18]} rotation={-0.5} color="#5838a8" />
 
       {/* Cars */}
       <Car position={[6, 0, 22]} rotation={0.4} color="#4a1a1a" />
