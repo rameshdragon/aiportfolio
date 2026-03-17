@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Model Preview — CODE SURVIVE</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0e14; color: #00c8b4; font-family: 'Share Tech Mono', monospace; overflow-x: hidden; }
+  h1 { text-align: center; padding: 24px 0 8px; font-size: 22px; letter-spacing: 6px; color: #00ffdd; text-shadow: 0 0 20px #00c8b4; }
+  .subtitle { text-align: center; font-size: 11px; color: rgba(0,200,180,0.5); letter-spacing: 3px; margin-bottom: 24px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 20px; padding: 20px; }
+  .card { border: 1px solid rgba(0,200,180,0.2); border-radius: 10px; overflow: hidden; background: #080c12; }
+  .card canvas { width: 100%; display: block; }
+  .card-label { text-align: center; padding: 10px; font-size: 12px; letter-spacing: 3px; color: #00c8b4; border-top: 1px solid rgba(0,200,180,0.1); }
+  .card-desc { text-align: center; padding: 0 10px 10px; font-size: 10px; color: rgba(0,200,180,0.45); letter-spacing: 1px; line-height: 1.7; }
+</style>
+</head>
+<body>
+<h1>CODE SURVIVE — 3D MODEL PREVIEW</h1>
+<div class="subtitle">ROTATE: DRAG &nbsp;·&nbsp; ZOOM: SCROLL &nbsp;·&nbsp; APPROVE MODELS BEFORE IMPLEMENTATION</div>
+<div class="grid" id="grid"></div>
+
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+
+function createPreview(container, buildFn, bgColor = 0x080c12) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 340; canvas.height = 300;
+  container.insertBefore(canvas, container.firstChild);
+
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setSize(340, 300);
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.shadowMap.enabled = true;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.4;
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(bgColor);
+  scene.fog = new THREE.Fog(bgColor, 18, 35);
+
+  const camera = new THREE.PerspectiveCamera(55, 340 / 300, 0.1, 100);
+  camera.position.set(0, 2, 5);
+
+  const controls = new OrbitControls(camera, canvas);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.autoRotate = true;
+  controls.autoRotateSpeed = 1.8;
+  controls.target.set(0, 1, 0);
+
+  // Lights
+  scene.add(new THREE.AmbientLight(0x8aa8c0, 0.7));
+  const sun = new THREE.DirectionalLight(0xffe8c0, 1.5);
+  sun.position.set(5, 10, 5);
+  sun.castShadow = true;
+  scene.add(sun);
+  scene.add(new THREE.HemisphereLight(0x4a7090, 0x1a1e22, 0.4));
+
+  // Ground
+  const ground = new THREE.Mesh(
+    new THREE.CircleGeometry(4, 32),
+    new THREE.MeshStandardMaterial({ color: 0x1a1e22, roughness: 0.95 })
+  );
+  ground.rotation.x = -Math.PI / 2;
+  ground.receiveShadow = true;
+  scene.add(ground);
+
+  const model = buildFn(scene);
+
+  let t = 0;
+  function animate() {
+    requestAnimationFrame(animate);
+    t += 0.016;
+    if (model && model.animate) model.animate(t);
+    controls.update();
+    renderer.render(scene, camera);
+  }
+  animate();
+}
+
+function box(w, h, d, color, opts = {}) {
+  const m = new THREE.Mesh(
+    new THREE.BoxGeometry(w, h, d),
+    new THREE.MeshStandardMaterial({ color, roughness: opts.rough ?? 0.8, metalness: opts.metal ?? 0.2, ...opts })
+  );
+  m.castShadow = true; m.receiveShadow = true;
+  return m;
+}
+function sphere(r, color, opts = {}) {
+  const m = new THREE.Mesh(
+    new THREE.SphereGeometry(r, 12, 12),
+    new THREE.MeshStandardMaterial({ color, roughness: opts.rough ?? 0.7, metalness: opts.metal ?? 0.1, ...opts })
+  );
+  m.castShadow = true;
+  return m;
+}
+function cyl(rt, rb, h, color, opts = {}) {
+  const m = new THREE.Mesh(
+    new THREE.CylinderGeometry(rt, rb, h, 10),
+    new THREE.MeshStandardMaterial({ color, roughness: opts.rough ?? 0.8, metalness: opts.metal ?? 0.2 })
+  );
+  m.castShadow = true;
+  return m;
+}
+function add(parent, child, x=0,y=0,z=0,rx=0,ry=0,rz=0) {
+  child.position.set(x,y,z); child.rotation.set(rx,ry,rz);
+  parent.add(child); return child;
+}
+
+// ─── MODEL 1: M-7 PLAYER ───
+function buildM7(scene) {
+  const root = new THREE.Group();
+  scene.add(root);
+  root.position.y = 0;
+
+  const BASE = 0x2a5845, DARK = 0x1a3020, RUST = 0x8a5020, EYE = 0xccdd33, METAL = 0x3a5a48;
+
+  // Feet
+  const lFoot = add(root, box(0.22,0.1,0.32,DARK), -0.18,0.05,0.05);
+  const rFoot = add(root, box(0.22,0.1,0.32,DARK),  0.18,0.05,0.05);
+
+  // Lower legs
+  const lLow = add(root, box(0.14,0.42,0.14,BASE), -0.18,0.32,0);
+  const rLow = add(root, box(0.14,0.42,0.14,BASE),  0.18,0.32,0);
+  // Knee joints
+  add(root, sphere(0.09,METAL), -0.18,0.55,0);
+  add(root, sphere(0.09,METAL),  0.18,0.55,0);
+  // Upper legs
+  add(root, box(0.17,0.44,0.17,BASE), -0.18,0.8,0);
+  add(root, box(0.17,0.44,0.17,BASE),  0.18,0.8,0);
+  // Rust shin plates
+  add(root, box(0.12,0.2,0.02,RUST), -0.18,0.28,0.08);
+  add(root, box(0.12,0.2,0.02,RUST),  0.18,0.28,0.08);
+
+  // Waist / belt
+  add(root, box(0.42,0.12,0.22,DARK), 0,1.1,0);
+  add(root, box(0.44,0.06,0.24,RUST), 0,1.06,0);
+
+  // Torso
+  const torso = add(root, box(0.52,0.58,0.28,BASE), 0,1.46,0);
+  // Chest rust patches
+  add(root, box(0.14,0.1,0.02,RUST), 0.15,1.58,0.15);
+  add(root, box(0.1,0.08,0.02,RUST), -0.12,1.35,0.15);
+  // Chest reactor
+  const reactorMat = new THREE.MeshStandardMaterial({color:0xc8d8aa, emissive:0xaaccaa, emissiveIntensity:1.2, roughness:0.3});
+  const reactor = new THREE.Mesh(new THREE.SphereGeometry(0.065,10,10), reactorMat);
+  reactor.position.set(0,1.55,0.15); root.add(reactor);
+  // Reactor glow ring
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.085,0.02,8,20), new THREE.MeshStandardMaterial({color:0xaaddaa,emissive:0x88cc88,emissiveIntensity:0.8}));
+  ring.position.set(0,1.55,0.145); ring.rotation.x = Math.PI/2; root.add(ring);
+  // Point light for reactor
+  const reactorLight = new THREE.PointLight(0xaaddaa, 1.0, 1.5);
+  reactorLight.position.set(0,1.55,0.3); root.add(reactorLight);
+
+  // M-7 label (thin box)
+  add(root, box(0.08,0.035,0.005,0xaaaaaa,{rough:0.3,metal:0.6}), 0.18,1.72,0.145);
+
+  // Shoulder pauldrons
+  add(root, box(0.3,0.18,0.26,METAL), -0.42,1.62,0);
+  add(root, box(0.3,0.18,0.26,METAL),  0.42,1.62,0);
+  add(root, box(0.14,0.07,0.2,RUST), -0.42,1.54,0);
+  add(root, box(0.14,0.07,0.2,RUST),  0.42,1.54,0);
+
+  // Neck cables
+  add(root, cyl(0.03,0.04,0.18,DARK), 0,1.9,0);
+  add(root, cyl(0.015,0.015,0.2,0x2a3a28,{rough:0.9}), -0.06,1.88,0.06,0.3,0,0.2);
+  add(root, cyl(0.015,0.015,0.2,0x2a3a28,{rough:0.9}),  0.06,1.88,0.06,0.3,0,-0.2);
+
+  // Head dome
+  const headMat = new THREE.MeshStandardMaterial({color:BASE, roughness:0.55, metalness:0.3});
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.2,14,14), headMat);
+  head.position.set(0,2.08,0); head.scale.y = 1.1;
+  root.add(head);
+  // Face plate
+  add(root, box(0.3,0.2,0.09,DARK,{rough:0.7}), 0,2.06,0.13);
+  // Eye sockets (deep)
+  add(root, box(0.09,0.07,0.06,0x080e10), -0.07,2.11,0.16);
+  add(root, box(0.09,0.07,0.06,0x080e10),  0.07,2.11,0.16);
+  // Glowing eyes
+  const eyeMat = new THREE.MeshStandardMaterial({color:EYE,emissive:EYE,emissiveIntensity:1.5,roughness:0.2});
+  const lEye = new THREE.Mesh(new THREE.SphereGeometry(0.033,8,8), eyeMat);
+  const rEye = lEye.clone();
+  lEye.position.set(-0.07,2.11,0.18); rEye.position.set(0.07,2.11,0.18);
+  root.add(lEye); root.add(rEye);
+  // Eye glow light
+  const eyeLight = new THREE.PointLight(EYE, 0.8, 1.2);
+  eyeLight.position.set(0,2.11,0.25); root.add(eyeLight);
+  // Mandible jaw
+  add(root, box(0.22,0.06,0.08,DARK), 0,1.96,0.12);
+  // Vent grille
+  add(root, box(0.18,0.025,0.01,0x3a4a38), 0,2.0,0.185);
+
+  // Left arm (claw) — thin segmented
+  const lShoulder = add(root, box(0.11,0.38,0.11,BASE), -0.6,1.5,0);
+  add(root, sphere(0.065,METAL), -0.6,1.32,0);
+  add(root, box(0.09,0.35,0.09,BASE), -0.6,1.12,0);
+  // Claw fingers
+  for (let i=-1;i<=1;i++) {
+    const cl = box(0.03,0.15,0.03,0x3a4a30,{rough:0.6,metal:0.5});
+    cl.position.set(-0.6+i*0.04,0.87,0.03); cl.rotation.x=0.4; root.add(cl);
+  }
+
+  // Right arm (rifle)
+  add(root, box(0.11,0.38,0.11,BASE),  0.6,1.5,0);
+  add(root, sphere(0.065,METAL),  0.6,1.32,0);
+  add(root, box(0.09,0.35,0.09,BASE),  0.6,1.12,0);
+  // Rifle body
+  const rifleGroup = new THREE.Group();
+  rifleGroup.position.set(0.62,0.9,0.1);
+  rifleGroup.rotation.set(0.3,0,-0.1);
+  root.add(rifleGroup);
+  add(rifleGroup, box(0.07,0.52,0.09,0x2a2a18,{rough:0.7}), 0,0,0);
+  add(rifleGroup, cyl(0.025,0.025,0.55,0x3a3a25,{rough:0.5,metal:0.6}), 0,-0.38,0.04,Math.PI/2,0,0);
+  add(rifleGroup, box(0.09,0.08,0.18,0x3a3518), 0,0.12,0.04);
+
+  // Shadow
+  const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.45,24), new THREE.MeshStandardMaterial({color:0,transparent:true,opacity:0.4}));
+  shadow.rotation.x = -Math.PI/2; shadow.position.y=0.01; root.add(shadow);
+
+  return {
+    animate(t) {
+      reactorMat.emissiveIntensity = 0.9 + Math.sin(t*3)*0.4;
+      eyeMat.emissiveIntensity = 1.2 + Math.sin(t*4)*0.5;
+      reactorLight.intensity = 0.8 + Math.sin(t*3)*0.3;
+      eyeLight.intensity = 0.6 + Math.sin(t*4)*0.3;
+    }
+  };
+}
+
+// ─── MODEL 2: ZOMBIE TYPE A — CIVILIAN ───
+function buildZombieA(scene) {
+  const root = new THREE.Group();
+  scene.add(root);
+  const SKIN='#b0a888', SHIRT='#d0c8b8', PANTS='#2a2830', BLOOD='#aa2222';
+
+  // Feet
+  add(root, box(0.16,0.08,0.22,0x2a2820), -0.12,0.04,0.04);
+  add(root, box(0.16,0.08,0.22,0x2a2820),  0.12,0.04,0.04);
+  // Legs
+  add(root, box(0.16,0.45,0.16,PANTS), -0.12,0.3,0);
+  add(root, box(0.16,0.45,0.16,PANTS),  0.12,0.3,0);
+  // Torso (torn shirt)
+  add(root, box(0.46,0.55,0.26,SHIRT,{rough:0.95}), 0,0.86,0);
+  // Blood splatter on shirt
+  add(root, box(0.18,0.22,0.01,BLOOD,{rough:1}), -0.06,0.95,0.14);
+  add(root, box(0.12,0.14,0.01,BLOOD,{rough:1}),  0.1,0.78,0.14);
+  // Torn cloth strips
+  add(root, box(0.06,0.18,0.015,SHIRT), -0.18,0.65,0.13);
+  add(root, box(0.06,0.15,0.015,SHIRT),  0.14,0.62,0.13);
+
+  // Neck
+  add(root, cyl(0.07,0.09,0.12,SKIN), 0,1.2,0);
+  // Head (lumpy sphere)
+  const headMesh = sphere(0.19,SKIN,{rough:0.9});
+  headMesh.position.set(0,1.44,0.02); headMesh.scale.set(1,0.98,0.95);
+  root.add(headMesh);
+  // Rotting face
+  add(root, box(0.14,0.08,0.06,0x988870,{rough:1}), 0,1.46,0.15); // face
+  // Hollow eyes (red glow)
+  const eyeMat = new THREE.MeshStandardMaterial({color:BLOOD,emissive:BLOOD,emissiveIntensity:0.6});
+  const le = new THREE.Mesh(new THREE.SphereGeometry(0.028,8,8),eyeMat);
+  le.position.set(-0.055,1.48,0.19); root.add(le);
+  const re = le.clone(); re.position.set(0.055,1.48,0.19); root.add(re);
+  // Open mouth
+  add(root, box(0.1,0.05,0.06,0x1a0808), 0,1.36,0.17);
+  // Exposed bone patch
+  add(root, box(0.08,0.05,0.015,0xd8c8a0), -0.08,1.54,0.17);
+
+  // Arms reaching forward
+  const lArm = new THREE.Group(); lArm.position.set(-0.3,0.95,0); lArm.rotation.x=-1.1; lArm.rotation.z=0.15; root.add(lArm);
+  add(lArm, box(0.12,0.42,0.12,SKIN,{rough:0.9}), 0,-0.18,0);
+  add(lArm, box(0.1,0.35,0.1,SKIN,{rough:0.9}),  0,-0.48,0);
+  // Torn sleeve
+  add(lArm, box(0.14,0.22,0.015,SHIRT), 0,-0.08,0.07);
+
+  const rArm = new THREE.Group(); rArm.position.set(0.3,0.95,0); rArm.rotation.x=-0.9; rArm.rotation.z=-0.2; root.add(rArm);
+  add(rArm, box(0.12,0.42,0.12,SKIN,{rough:0.9}), 0,-0.18,0);
+  add(rArm, box(0.1,0.35,0.1,SKIN,{rough:0.9}),  0,-0.48,0);
+  add(rArm, box(0.14,0.22,0.015,SHIRT), 0,-0.08,0.07);
+
+  // Lean forward
+  root.rotation.x = 0.1;
+
+  const eyeLight = new THREE.PointLight(BLOOD,0.4,1);
+  eyeLight.position.set(0,1.48,0.3); root.add(eyeLight);
+  return {
+    animate(t) {
+      eyeMat.emissiveIntensity = 0.4 + Math.sin(t*2)*0.2;
+      lArm.rotation.x = -1.1 + Math.sin(t*1.5)*0.08;
+      rArm.rotation.x = -0.9 - Math.sin(t*1.5)*0.08;
+    }
+  };
+}
+
+// ─── MODEL 3: ZOMBIE TYPE B — MILITARY ───
+function buildZombieB(scene) {
+  const root = new THREE.Group();
+  scene.add(root);
+
+  // Boots
+  add(root, box(0.18,0.1,0.24,0x2a2820), -0.12,0.05,0.03);
+  add(root, box(0.18,0.1,0.24,0x2a2820),  0.12,0.05,0.03);
+  // Legs
+  add(root, box(0.17,0.46,0.17,0x3a4a2a,{rough:0.85}), -0.12,0.32,0);
+  add(root, box(0.17,0.46,0.17,0x3a4a2a,{rough:0.85}),  0.12,0.32,0);
+  // Torso
+  add(root, box(0.5,0.58,0.28,0x3a4a2a,{rough:0.85}), 0,0.87,0);
+  // Belt with pouches
+  add(root, box(0.5,0.08,0.3,0x2a3520), 0,0.62,0);
+  add(root, box(0.1,0.1,0.12,0x2a3020), -0.18,0.66,0.15);
+  add(root, box(0.1,0.1,0.12,0x2a3020),  0.04,0.66,0.15);
+  // Blood marks
+  add(root, box(0.12,0.2,0.01,0x5a1818,{rough:1}), 0.08,0.9,0.15);
+
+  // Neck
+  add(root, cyl(0.08,0.1,0.12,0x5a5040), 0,1.2,0);
+  // Head
+  const head = sphere(0.19,0x5a5040,{rough:0.85});
+  head.position.set(0,1.44,0); root.add(head);
+  // Military helmet
+  const helmMat = new THREE.MeshStandardMaterial({color:0x2a3020,roughness:0.8,metalness:0.3});
+  const helm = new THREE.Mesh(new THREE.SphereGeometry(0.22,12,8,[0,Math.PI*2,0,Math.PI*0.6]), helmMat);
+  helm.position.set(0,1.52,0); root.add(helm);
+  add(root, box(0.44,0.06,0.26,0x2a3020,{rough:0.8}), 0,1.32,0); // helmet brim
+  // Dead eyes
+  const eyeMat2 = new THREE.MeshStandardMaterial({color:0xaa2222,emissive:0xaa2222,emissiveIntensity:0.4});
+  const le2 = new THREE.Mesh(new THREE.SphereGeometry(0.03,8,8),eyeMat2);
+  le2.position.set(-0.055,1.44,0.18); root.add(le2);
+  const re2 = le2.clone(); re2.position.set(0.055,1.44,0.18); root.add(re2);
+  add(root, box(0.09,0.04,0.05,0x180808), 0,1.34,0.16);
+
+  // Arms
+  const lArmB = new THREE.Group(); lArmB.position.set(-0.31,0.95,0); lArmB.rotation.x=-0.9; lArmB.rotation.z=0.25; root.add(lArmB);
+  add(lArmB, box(0.14,0.42,0.14,0x3a4a2a), 0,-0.18,0);
+  add(lArmB, box(0.12,0.36,0.12,0x5a5040), 0,-0.48,0);
+
+  const rArmB = new THREE.Group(); rArmB.position.set(0.31,0.95,0); rArmB.rotation.x=-0.5; rArmB.rotation.z=-0.3; root.add(rArmB);
+  add(rArmB, box(0.14,0.42,0.14,0x3a4a2a), 0,-0.18,0);
+  add(rArmB, box(0.12,0.36,0.12,0x5a5040), 0,-0.48,0);
+
+  return {
+    animate(t) {
+      lArmB.rotation.x = -0.9 + Math.sin(t*1.3)*0.1;
+      rArmB.rotation.x = -0.5 - Math.sin(t*1.3)*0.1;
+    }
+  };
+}
+
+// ─── MODEL 4: ZOMBIE TYPE C — HAZMAT ───
+function buildZombieC(scene) {
+  const root = new THREE.Group();
+  scene.add(root);
+  const YELLOW = 0xd4a020, DARK_Y = 0xb08010, BLOOD = 0xcc3333;
+
+  // Heavy boots
+  add(root, box(0.22,0.12,0.28,0x3a3020), -0.14,0.06,0.03);
+  add(root, box(0.22,0.12,0.28,0x3a3020),  0.14,0.06,0.03);
+  // Thick legs (hazmat suit)
+  add(root, box(0.22,0.48,0.22,YELLOW), -0.14,0.36,0);
+  add(root, box(0.22,0.48,0.22,YELLOW),  0.14,0.36,0);
+  // Ankle seals
+  add(root, cyl(0.11,0.13,0.06,DARK_Y), -0.14,0.12,0);
+  add(root, cyl(0.11,0.13,0.06,DARK_Y),  0.14,0.12,0);
+  // Torso (puffier)
+  add(root, box(0.58,0.62,0.36,YELLOW), 0,0.9,0);
+  // Blood splatter
+  add(root, box(0.2,0.25,0.01,BLOOD,{rough:1}), 0.1,0.95,0.19);
+  add(root, box(0.12,0.15,0.01,BLOOD,{rough:1}), -0.15,0.75,0.19);
+  // Suit seam line
+  add(root, box(0.02,0.5,0.02,DARK_Y), 0,0.9,0.19);
+
+  // Neck seal
+  add(root, cyl(0.14,0.16,0.1,DARK_Y), 0,1.24,0);
+  // Big bubble helmet
+  const visorMat = new THREE.MeshStandardMaterial({color:0xc8b840,roughness:0.1,metalness:0.3,transparent:true,opacity:0.85});
+  const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.26,14,14), visorMat);
+  helmet.position.set(0,1.55,0); root.add(helmet);
+  // Hazmat hood over helmet
+  add(root, box(0.58,0.22,0.48,YELLOW,{rough:0.8}), 0,1.65,0);
+  // Dark face inside visor (barely visible)
+  add(root, sphere(0.14,0x2a1a10,{rough:0.9}), 0,1.53,0.05);
+  const eyeM = new THREE.MeshStandardMaterial({color:0xcc4400,emissive:0xcc4400,emissiveIntensity:0.5});
+  const lev = new THREE.Mesh(new THREE.SphereGeometry(0.03,6,6),eyeM);
+  lev.position.set(-0.05,1.55,0.18); root.add(lev);
+  const rev = lev.clone(); rev.position.set(0.05,1.55,0.18); root.add(rev);
+
+  // Thick arms
+  const lAC = new THREE.Group(); lAC.position.set(-0.42,1.0,0); lAC.rotation.x=-0.8; lAC.rotation.z=0.3; root.add(lAC);
+  add(lAC, box(0.18,0.44,0.18,YELLOW), 0,-0.18,0);
+  add(lAC, box(0.16,0.36,0.16,YELLOW), 0,-0.48,0);
+  add(lAC, cyl(0.08,0.1,0.06,DARK_Y), 0,-0.24,0);
+
+  const rAC = new THREE.Group(); rAC.position.set(0.42,1.0,0); rAC.rotation.x=-0.6; rAC.rotation.z=-0.25; root.add(rAC);
+  add(rAC, box(0.18,0.44,0.18,YELLOW), 0,-0.18,0);
+  add(rAC, box(0.16,0.36,0.16,YELLOW), 0,-0.48,0);
+  // Tool/pipe in hand
+  add(rAC, cyl(0.04,0.04,0.5,0x4a4040,{rough:0.5,metal:0.6}), 0.05,-0.68,0.05,0.2,0,0.1);
+
+  const eyeL = new THREE.PointLight(0xcc4400,0.5,1.2);
+  eyeL.position.set(0,1.55,0.35); root.add(eyeL);
+  return {
+    animate(t) {
+      eyeM.emissiveIntensity = 0.4+Math.sin(t*2.5)*0.2;
+      lAC.rotation.x = -0.8+Math.sin(t*1.2)*0.1;
+    }
+  };
+}
+
+// ─── MODEL 5: SMALL RUIN BUILDING ───
+function buildSmallRuin(scene) {
+  const root = new THREE.Group(); scene.add(root);
+  const CONC = 0x4a4640, WIN = 0x0e1218, VINE = 0x2a5520, REBAR = 0x3a3830;
+
+  // Main structure
+  const bld = box(3.5,4.5,3,CONC,{rough:0.9,metal:0}); bld.position.set(0,2.25,0); root.add(bld);
+  // Roof edge crumble
+  add(root, box(3.8,0.2,3.3,0x3a3830,{rough:0.95}), 0,4.6,0);
+  add(root, box(0.5,0.6,0.4,CONC,{rough:0.95}), 1.0,4.9,0.2);
+  add(root, box(0.4,0.9,0.35,CONC,{rough:0.95}), -0.8,5.0,-0.1);
+
+  // Windows row 1
+  for (let ix of [-0.9,0.5]) {
+    add(root, box(0.9,1.1,0.05,WIN), ix,1.5,1.52);
+    add(root, box(0.9,1.1,0.05,WIN), ix,3.2,1.52);
+  }
+  // Cracked window (broken)
+  add(root, box(0.45,0.6,0.05,WIN), 0.9,3.2,1.52);
+
+  // Vines (thin green planes draped on side)
+  for (let vy=0;vy<4;vy++) {
+    const vw = 0.3+Math.random()*0.4, vh=0.8;
+    const v = box(vw,vh,0.04,VINE,{rough:1,transparent:true,opacity:0.85});
+    v.position.set(-1.5+Math.random()*0.4,0.6+vy*0.8,1.52); root.add(v);
+  }
+  // Vines on side
+  for (let vy=0;vy<3;vy++) {
+    const v = box(0.04,0.9,0.5+Math.random()*0.3,VINE,{rough:1});
+    v.position.set(1.77,0.8+vy*1.0,-0.3+Math.random()*0.6); root.add(v);
+  }
+
+  // Rebar rods sticking up
+  for (let i=0;i<5;i++) {
+    const r = cyl(0.02,0.02,0.5+Math.random()*0.4,REBAR,{rough:0.7,metal:0.5});
+    r.position.set(-1.2+i*0.5,4.75+Math.random()*0.3,-0.3+Math.random()*0.6);
+    r.rotation.set(Math.random()*0.3,0,Math.random()*0.2-0.1);
+    root.add(r);
+  }
+
+  // Ground debris
+  add(root, box(0.6,0.15,0.5,CONC,{rough:0.95}), 1.5,0.07,1.0);
+  add(root, box(0.5,0.1,0.4,CONC,{rough:0.95}), -1.2,0.05,1.2);
+
+  root.position.y = 0;
+  return { animate(){} };
+}
+
+// ─── MODEL 6: TALL INDUSTRIAL TOWER ───
+function buildTower(scene) {
+  const root = new THREE.Group(); scene.add(root);
+  const CONC=0x3a3832, FRAME=0x2a2825, VINE=0x2a5018;
+
+  // Main tower body
+  add(root, box(2.2,8.0,2.2,CONC,{rough:0.9}), 0,4.0,0);
+  // Taper top
+  add(root, box(1.8,2.5,1.8,0x2a2820,{rough:0.9}), 0,9.25,0);
+  // Roof top slab
+  add(root, box(2.0,0.2,2.0,FRAME,{rough:0.85}), 0,10.6,0);
+
+  // Windows (multiple rows)
+  for (let iy=0;iy<4;iy++) for (let ix of [-0.45,0.45]) {
+    add(root, box(0.55,0.9,0.06,0x0a1018), ix,1.5+iy*2.0,1.12);
+  }
+  // Upper windows (narrower)
+  for (let iy=0;iy<2;iy++) for (let ix of [-0.3,0.3]) {
+    add(root, box(0.35,0.7,0.06,0x0a1018), ix,9.0+iy*0.9,0.92);
+  }
+
+  // Scaffolding on upper section
+  for (let iy=0;iy<3;iy++) {
+    add(root, box(2.4,0.06,0.06,FRAME,{rough:0.6,metal:0.5}), 0,7.0+iy*0.8, 1.14);
+    add(root, box(0.06,0.8,0.06,FRAME,{rough:0.6,metal:0.5}), 1.14,7.4+iy*0.8,1.14);
+    add(root, box(0.06,0.8,0.06,FRAME,{rough:0.6,metal:0.5}), -1.14,7.4+iy*0.8,1.14);
+  }
+  // Cross braces
+  add(root, box(0.05,1.1,0.05,FRAME,{rough:0.6,metal:0.4}), 0.55,7.6,1.12,0,0,0.5);
+  add(root, box(0.05,1.1,0.05,FRAME,{rough:0.6,metal:0.4}), -0.55,7.6,1.12,0,0,-0.5);
+
+  // Communication dish
+  add(root, cyl(0.22,0.22,0.04,0x3a4040,{rough:0.6,metal:0.5}), 0.4,11.0,0.4,Math.PI/3,0,0);
+  // Antennas
+  add(root, cyl(0.02,0.02,1.2,FRAME,{rough:0.5,metal:0.6}), -0.3,11.3,0);
+  add(root, cyl(0.015,0.015,0.8,FRAME,{rough:0.5}),  0.3,11.1,0.2,0.1,0,0.05);
+  add(root, cyl(0.01,0.01,0.6,FRAME),  0.0,11.0,-0.3,0.15,0,-0.05);
+
+  // Vines on lower section
+  for (let vy=0;vy<4;vy++) {
+    const v = box(0.06,0.9,0.4+Math.random()*0.3,VINE,{rough:1});
+    v.position.set(1.12,0.6+vy*1.1,-0.4+Math.random()*0.8); root.add(v);
+  }
+
+  root.position.y = -0.1;
+  camera_offset_y = 4;
+  return { animate(){} };
+}
+
+// ─── MODEL 7: BRIDGE ───
+function buildBridge(scene) {
+  const root = new THREE.Group(); scene.add(root);
+  const WOOD=0x6a4820, STONE=0x5a5850, STONE2=0x4a4840;
+
+  const LEN = 5;
+  // Stone abutment pillars at each end
+  for (let sx of [-1, 1]) {
+    for (let sz of [-LEN/2-0.3, LEN/2+0.3]) {
+      const pil = box(0.5,1.4,0.6,STONE,{rough:0.95}); pil.position.set(sx*1.35,0.7,sz); root.add(pil);
+      // Cap stone
+      const cap = box(0.6,0.14,0.7,STONE2,{rough:0.9}); cap.position.set(sx*1.35,1.47,sz); root.add(cap);
+    }
+  }
+
+  // Stone side walls
+  add(root, box(0.26,0.65,LEN,STONE,{rough:0.9}), -1.2,1.15,0);
+  add(root, box(0.26,0.65,LEN,STONE,{rough:0.9}),  1.2,1.15,0);
+  // Battlement notches on walls
+  for (let i=0;i<5;i++) {
+    add(root, box(0.28,0.25,0.35,STONE2,{rough:0.9}), -1.2,1.55,-LEN/2+0.35+i*(LEN/5));
+    add(root, box(0.28,0.25,0.35,STONE2,{rough:0.9}),  1.2,1.55,-LEN/2+0.35+i*(LEN/5));
+  }
+
+  // Wooden plank deck
+  const plankCount = Math.floor(LEN/0.38);
+  for (let i=0;i<plankCount;i++) {
+    const plank = box(2.2,0.09,0.32,WOOD,{rough:0.85});
+    plank.position.set(0,0.84,-LEN/2+0.2+i*0.38); root.add(plank);
+  }
+
+  // Underside support beam
+  add(root, box(2.4,0.2,LEN,0x4a3818,{rough:0.9}), 0,0.75,0);
+
+  root.position.y = -0.3;
+  return { animate(){} };
+}
+
+// ─── MODEL 8: WATER — FLOODED RUINS ───
+function buildWater(scene) {
+  const root = new THREE.Group(); scene.add(root);
+
+  // Deep water bed
+  const bed = new THREE.Mesh(new THREE.PlaneGeometry(7,7), new THREE.MeshStandardMaterial({color:0x061510,roughness:0.9}));
+  bed.rotation.x=-Math.PI/2; bed.position.y=-0.4; root.add(bed);
+
+  // Water surface
+  const waterMat = new THREE.MeshStandardMaterial({color:0x0a2a20,transparent:true,opacity:0.82,roughness:0.15,metalness:0.55});
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(7,7),waterMat);
+  water.rotation.x=-Math.PI/2; water.position.y=-0.06; root.add(water);
+  // Water shimmer light
+  const waterLight = new THREE.PointLight(0x0a4a30,0.6,5);
+  waterLight.position.set(0,0.5,0); root.add(waterLight);
+
+  // Debris floating
+  const DEBRIS=0x2a3020;
+  add(root, box(0.8,0.06,0.4,DEBRIS,{rough:0.9}), 1.2,-0.03,-0.8,0.05,0.4,0.1);
+  add(root, box(0.6,0.05,0.3,0x3a2a18,{rough:0.9}), -1.4,-0.03,0.6,0.08,1.2,-0.05);
+  add(root, box(1.0,0.06,0.2,DEBRIS,{rough:0.9}), -0.5,-0.02,1.5,0.03,0.8,0.06);
+  add(root, box(0.4,0.05,0.5,0x3a3028,{rough:0.9}), 1.8,-0.03,1.2,0.06,0.5,0.08);
+  // Broken rebar/metal
+  add(root, cyl(0.02,0.02,1.0,0x2a2828,{rough:0.5,metal:0.6}), -1.8,-0.0,0.0,Math.PI/2*0.1,0.3,Math.PI/2*0.05);
+  add(root, cyl(0.02,0.02,0.8,0x2a2828,{rough:0.5,metal:0.6}),  0.8,-0.0,-1.5,Math.PI/2*0.15,1.1,0);
+
+  // Reed/grass tufts at edges
+  const GRASS=0x2a5a20;
+  for (let i=0;i<10;i++) {
+    const a = i*0.628+Math.PI/5;
+    const gx=Math.cos(a)*3.0, gz=Math.sin(a)*3.0;
+    for (let j=0;j<3;j++) {
+      const blade = cyl(0.01,0.025,0.3+Math.random()*0.3,GRASS,{rough:1});
+      blade.position.set(gx+(Math.random()-0.5)*0.3, 0.1+Math.random()*0.1, gz+(Math.random()-0.5)*0.3);
+      blade.rotation.set((Math.random()-0.5)*0.3,Math.random()*Math.PI,(Math.random()-0.5)*0.2);
+      root.add(blade);
+    }
+  }
+
+  root.position.y=0.3;
+  return {
+    animate(t) {
+      waterMat.opacity = 0.78+Math.sin(t*0.7)*0.06;
+      waterLight.intensity = 0.5+Math.sin(t*0.8)*0.15;
+      water.position.y = -0.06 + Math.sin(t*0.4)*0.015;
+    }
+  };
+}
+
+// ─── BUILD ALL CARDS ───
+const MODELS = [
+  { id:'m7',       label:'MODEL 1 — M-7 PLAYER',          desc:'Verdigris robot · skull head · claw left · rifle right · M-7 marking', fn:buildM7,       cam:[0,2.2,4.5] },
+  { id:'zombieA',  label:'MODEL 2 — ZOMBIE A · CIVILIAN',  desc:'Torn white shirt · blood · red glowing eyes · arms reaching', fn:buildZombieA,  cam:[0,1.5,4.2] },
+  { id:'zombieB',  label:'MODEL 3 — ZOMBIE B · MILITARY',  desc:'Olive uniform · helmet · belt pouches · broken stance',      fn:buildZombieB,  cam:[0,1.5,4.2] },
+  { id:'zombieC',  label:'MODEL 4 — ZOMBIE C · HAZMAT',    desc:'Yellow hazmat suit · bubble visor · pipe weapon · blood',   fn:buildZombieC,  cam:[0,1.6,4.5] },
+  { id:'ruin',     label:'MODEL 5 — SMALL RUIN BUILDING',  desc:'2-3 story concrete · vines · broken windows · rebar top',   fn:buildSmallRuin,cam:[0,2.5,7.5] },
+  { id:'tower',    label:'MODEL 6 — TALL INDUSTRIAL TOWER',desc:'7-story · scaffolding · antenna · vines on lower floors',   fn:buildTower,    cam:[0,5.5,14]  },
+  { id:'bridge',   label:'MODEL 7 — BRIDGE',               desc:'Stone pillars + walls · wooden planks · battlements',       fn:buildBridge,   cam:[0,1.8,7.5] },
+  { id:'water',    label:'MODEL 8 — WATER · FLOODED RUINS',desc:'Murky teal water · floating debris · reeds · shimmer anim',fn:buildWater,    cam:[0,2.5,6.5] },
+];
+
+const grid = document.getElementById('grid');
+for (const m of MODELS) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML = `<div class="card-label">${m.label}</div><div class="card-desc">${m.desc}</div>`;
+  grid.appendChild(card);
+
+  const scene = new THREE.Scene();
+  const [cx,cy,cz] = m.cam;
+  const camera = new THREE.PerspectiveCamera(52, 340/300, 0.1, 100);
+  camera.position.set(cx,cy,cz);
+
+  const canvas = document.createElement('canvas');
+  canvas.width=340; canvas.height=300;
+  card.insertBefore(canvas, card.firstChild);
+
+  const renderer = new THREE.WebGLRenderer({canvas,antialias:true});
+  renderer.setSize(340,300);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+  renderer.shadowMap.enabled=true;
+  renderer.toneMapping=THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure=1.5;
+
+  const s = new THREE.Scene();
+  s.background=new THREE.Color(0x0a0e14);
+  s.fog=new THREE.Fog(0x0a0e14,20,40);
+
+  s.add(new THREE.AmbientLight(0x8ab0c8,0.75));
+  const sun=new THREE.DirectionalLight(0xffe8b0,1.6); sun.position.set(4,8,5); sun.castShadow=true; s.add(sun);
+  s.add(new THREE.HemisphereLight(0x4a7090,0x1a1e22,0.45));
+
+  const ground=new THREE.Mesh(new THREE.CircleGeometry(5,32),new THREE.MeshStandardMaterial({color:0x1a1e22,roughness:0.95}));
+  ground.rotation.x=-Math.PI/2; ground.receiveShadow=true; s.add(ground);
+
+  const ctrl=new OrbitControls(camera,canvas);
+  ctrl.enableDamping=true; ctrl.dampingFactor=0.08;
+  ctrl.autoRotate=true; ctrl.autoRotateSpeed=2;
+  ctrl.target.set(0,1.5,0);
+
+  const built = m.fn(s);
+  let ti=0;
+  (function loop(){
+    requestAnimationFrame(loop);
+    ti+=0.016;
+    if(built&&built.animate) built.animate(ti);
+    ctrl.update();
+    renderer.render(s,camera);
+  })();
+}
+</script>
+</body>
+</html>
