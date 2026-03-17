@@ -4,7 +4,8 @@ import { Sky, Stars, Sparkles, Text, Billboard } from '@react-three/drei'
 import * as THREE from 'three'
 import { Ground, WaterArea } from './Ground'
 import { PolyBuilding } from './PolyBuildings'
-import { Car, DeadTree, Bush, PowerPole, Bridge, Rubble } from './Props'
+import { PolyVeg } from './PolyVegetation'
+import { Car, PowerPole, Bridge, Rubble } from './Props'
 import { SignPole } from './SignPole'
 import { PlayerModel } from '../characters/PlayerModel'
 import { ZombieModel } from '../characters/ZombieModel'
@@ -292,20 +293,24 @@ function Environment() {
       <Car position={[-10, 0, -4]} rotation={0.8} />
       <Car position={[12, 0, 14]} rotation={-0.6} color="#2a3a2a" />
 
-      {/* Trees */}
-      <DeadTree position={[-14, 0, 2]} scale={1.2} />
-      <DeadTree position={[20, 0, 22]} />
-      <DeadTree position={[-22, 0, -6]} scale={0.9} />
-      <DeadTree position={[8, 0, -14]} scale={1.1} />
-      <DeadTree position={[-6, 0, -22]} />
-      <DeadTree position={[22, 0, -12]} scale={1.3} />
+      {/* Trees — deadtree + birch, each with unique colors */}
+      <PolyVeg type="deadtree" position={[-14, 0, 2]}   rotation={0.4}  color="#a09080" />
+      <PolyVeg type="deadtree" position={[20, 0, 22]}   rotation={-0.2} color="#c07850" />
+      <PolyVeg type="deadtree" position={[-6, 0, -22]}  rotation={1.1}  color="#7088a8" />
+      <PolyVeg type="birch"    position={[-22, 0, -6]}  rotation={0.6}  color="#98c878" />
+      <PolyVeg type="birch"    position={[8, 0, -14]}   rotation={-0.8} color="#c8b840" />
+      <PolyVeg type="birch"    position={[22, 0, -12]}  rotation={0.2}  color="#408858" />
 
-      {/* Bushes */}
-      <Bush position={[-10, 0, 12]} />
-      <Bush position={[14, 0, 8]} color="#1e4422" />
-      <Bush position={[-16, 0, -8]} />
-      <Bush position={[6, 0, -16]} color="#1a3a1e" />
-      <Bush position={[-4, 0, -24]} />
+      {/* Ground cover — bushes + grass variants, each unique type+color */}
+      <PolyVeg type="bushes"      position={[-10, 0, 12]}  rotation={0.3}  color="#4a7830" />
+      <PolyVeg type="bushes"      position={[14, 0, 8]}    rotation={-0.5} color="#286840" />
+      <PolyVeg type="bushes"      position={[-4, 0, -24]}  rotation={0.9}  color="#785028" />
+      <PolyVeg type="grass"       position={[-16, 0, -8]}  rotation={0.1}  color="#507830" />
+      <PolyVeg type="grass"       position={[6, 0, -16]}   rotation={-0.4} color="#386828" />
+      <PolyVeg type="grasspatch"  position={[18, 0, 4]}    rotation={0.7}  color="#608040" />
+      <PolyVeg type="grasspatch"  position={[-18, 0, -20]} rotation={-0.2} color="#486030" />
+      <PolyVeg type="grassyellow" position={[2, 0, 16]}    rotation={0.5}  color="#b8a030" />
+      <PolyVeg type="grassyellow" position={[-8, 0, -6]}   rotation={-0.6} color="#a07828" />
 
       {/* Power poles */}
       <PowerPole position={[2, 0, 20]} />
