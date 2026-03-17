@@ -1,151 +1,192 @@
 import { Canvas, useFrame } from '@react-three/fiber'
 import { OrbitControls, Stars } from '@react-three/drei'
-import { useRef, useMemo, useState, useEffect } from 'react'
+import { useRef, useMemo } from 'react'
 import * as THREE from 'three'
 
-// ─── WINDOW TEXTURE FACTORY ──────────────────────────────────────────────────
-const _texCache = {}
-function getWinTex(type) {
-  if (_texCache[type]) return _texCache[type]
-  const cfg = {
-    warm:   { pri: '#ff8800', acc: '#ffdd44', bg: '#03080f' },
-    cyan:   { pri: '#00ccff', acc: '#0066ff', bg: '#020c14' },
-    purple: { pri: '#cc44ff', acc: '#ff0088', bg: '#040612' },
-    pink:   { pri: '#ff3366', acc: '#ff8833', bg: '#040410' },
-    green:  { pri: '#00ff88', acc: '#44ff44', bg: '#020c08' },
-  }[type] || { pri: '#ff8800', acc: '#ffcc44', bg: '#030810' }
-
-  const W = 256, H = 512
+// ─── WINDOW TEXTURE – mixed neon colors like the reference image ──────────────
+function makeMixedWinTex(seed = 0) {
+  const W = 512, H = 1024
   const c = document.createElement('canvas')
   c.width = W; c.height = H
   const ctx = c.getContext('2d')
-  ctx.fillStyle = cfg.bg
+
+  // Dark building face
+  ctx.fillStyle = '#070e1c'
   ctx.fillRect(0, 0, W, H)
-  const cols = 4, rows = 12
+
+  // Neon color palette from the reference
+  const palette = [
+    '#ff9900', '#ffcc00', '#ffaa33', // warm orange / amber
+    '#ffee44', '#ff8833',            // yellow / deep orange
+    '#00ccff', '#44aaff', '#0088ff', // cyan / blue
+    '#cc44ff', '#ff00aa', '#9933ff', // purple / magenta
+    '#ff3388', '#ff6644',            // pink / coral
+  ]
+
+  const rng = (n) => Math.abs(Math.sin(n * 127.1 + seed * 311.7) * 43758.5) % 1
+  const cols = 4, rows = 14
+  const pw = W / cols, ph = H / rows
+
   for (let col = 0; col < cols; col++) {
     for (let row = 0; row < rows; row++) {
-      const s = Math.abs(Math.sin(col * 31.7 + row * 17.3 + type.length * 7.1))
-      if (s > 0.28) {
-        ctx.fillStyle = s > 0.72 ? cfg.acc : cfg.pri
-        ctx.shadowColor = ctx.fillStyle
-        ctx.shadowBlur = 8
-        const pw = W / cols, ph = H / rows
-        ctx.fillRect(col * pw + pw * 0.12, row * ph + ph * 0.12, pw * 0.76, ph * 0.66)
-      }
+      const idx = col * rows + row
+      const lit = rng(idx) > 0.22           // 78% windows are lit
+      if (!lit) continue
+      const colorIdx = Math.floor(rng(idx + 0.5) * palette.length)
+      const color = palette[colorIdx]
+      ctx.fillStyle = color
+      ctx.fillRect(
+        col * pw + pw * 0.1,
+        row * ph + ph * 0.1,
+        pw * 0.82,
+        ph * 0.72,
+      )
     }
   }
-  _texCache[type] = new THREE.CanvasTexture(c)
-  return _texCache[type]
+  return new THREE.CanvasTexture(c)
 }
 
-// ─── SHARED MATERIALS ────────────────────────────────────────────────────────
-const _matCache = {}
-const ROOF_MAT = new THREE.MeshStandardMaterial({ color: '#040810', roughness: 0.95 })
-function getBuildingMat(type) {
-  if (_matCache[type]) return _matCache[type]
-  const tex = getWinTex(type)
+// Pre-generate a handful of window texture variants (shared across buildings)
+const WIN_TEXS = [0, 1, 2, 3, 4].map(s => makeMixedWinTex(s))
+
+// Building material factory – THE KEY FIX: emissive must be #ffffff + emissiveMap
+function makeBuildingMats(texIdx) {
+  const tex = WIN_TEXS[texIdx % WIN_TEXS.length]
   const side = new THREE.MeshStandardMaterial({
-    color: '#060c18', map: tex, emissiveMap: tex,
-    emissive: '#111111', emissiveIntensity: 0.45,
-    roughness: 0.7, metalness: 0.35,
+    color:            '#07101e',
+    roughness:        0.8,
+    metalness:        0.3,
+    emissive:         new THREE.Color('#ffffff'), // WHITE → lets emissiveMap control color
+    emissiveMap:      tex,
+    emissiveIntensity: 1.6,
   })
-  _matCache[type] = [side, side, ROOF_MAT, ROOF_MAT, side, side]
-  return _matCache[type]
+  const roof = new THREE.MeshStandardMaterial({
+    color: '#050b16', roughness: 0.95,
+  })
+  return [side, side, roof, roof, side, side]
 }
+const BMAT = [0,1,2,3,4].map(makeBuildingMats)
 
-// ─── BUILDING DATA: [x, z, w, d, h, type] ────────────────────────────────────
+// ─── BUILDING DATA: [x, z, w, d, h, matIdx] ──────────────────────────────────
 const BUILDINGS = [
-  // Central tall skyscrapers
-  [0,   -19, 5, 5, 44, 'cyan'],
-  [-5,  -16, 4, 4, 30, 'warm'],
-  [5,   -16, 4, 4, 26, 'purple'],
-  [-9,  -19, 4, 3, 24, 'cyan'],
-  [9,   -19, 4, 3, 22, 'pink'],
-  [-7,  -13, 4, 3, 20, 'warm'],
-  [7,   -13, 4, 3, 18, 'purple'],
-  [0,   -13, 4, 4, 15, 'warm'],
-  [-3,  -23, 3, 3, 17, 'cyan'],
-  [3,   -23, 3, 3, 19, 'green'],
-  [-13, -19, 5, 4, 16, 'cyan'],
-  [13,  -19, 5, 4, 14, 'pink'],
-  // Left column
-  [-17, -19, 5, 4, 14, 'warm'],
-  [-17, -11, 5, 4, 12, 'cyan'],
-  [-17,  -3, 5, 4, 10, 'purple'],
-  [-17,   5, 5, 4,  9, 'warm'],
-  [-22, -15, 4, 4, 10, 'cyan'],
-  [-22,  -6, 4, 4,  9, 'warm'],
-  [-22,   3, 4, 4,  8, 'purple'],
-  [-28,  -9, 4, 4,  6, 'pink'],
-  [-28,  -1, 4, 4,  5, 'warm'],
-  // Right column
-  [17,  -19, 5, 4, 13, 'purple'],
-  [17,  -11, 5, 4, 11, 'warm'],
-  [17,   -3, 5, 4, 10, 'cyan'],
-  [17,    5, 5, 4,  9, 'pink'],
-  [22,  -15, 4, 4, 10, 'warm'],
-  [22,   -6, 4, 4,  9, 'cyan'],
-  [22,    3, 4, 4,  8, 'purple'],
-  [28,   -9, 4, 4,  6, 'warm'],
-  [28,   -1, 4, 4,  5, 'pink'],
-  // Center mid
-  [-10,  -9, 4, 4, 10, 'warm'],
-  [10,   -9, 4, 4, 10, 'purple'],
-  [-5,   -6, 4, 4,  8, 'cyan'],
-  [5,    -6, 4, 4,  8, 'warm'],
-  [0,    -6, 4, 3,  7, 'purple'],
-  // Front section
-  [-10,   1, 4, 4,  8, 'purple'],
-  [10,    1, 4, 4,  8, 'warm'],
-  [-5,    4, 4, 4,  7, 'cyan'],
-  [5,     4, 4, 4,  7, 'pink'],
-  [0,     4, 4, 4,  6, 'warm'],
-  [-15,   2, 4, 4,  7, 'cyan'],
-  [15,    2, 4, 4,  7, 'purple'],
-  // Front edge buildings
-  [-5,   13, 5, 4,  5, 'warm'],
-  [5,    13, 5, 4,  5, 'cyan'],
-  [0,    13, 4, 4,  6, 'purple'],
-  [-12,  13, 4, 4,  5, 'pink'],
-  [12,   13, 4, 4,  5, 'warm'],
-  [-28,   8, 4, 4,  6, 'cyan'],
-  [28,    8, 4, 4,  6, 'purple'],
+  // ── Tall central cluster (back of city) ──
+  [0,   -19, 5, 5, 44, 2],
+  [-5,  -16, 4, 4, 30, 0],
+  [5,   -16, 4, 4, 26, 1],
+  [-9,  -19, 4, 3, 25, 2],
+  [9,   -19, 4, 3, 23, 3],
+  [-7,  -13, 4, 3, 21, 0],
+  [7,   -13, 4, 3, 19, 4],
+  [0,   -13, 4, 4, 16, 1],
+  [-3,  -23, 3, 3, 18, 2],
+  [3,   -23, 3, 3, 20, 0],
+  [-13, -19, 5, 4, 17, 3],
+  [13,  -19, 5, 4, 15, 1],
+  [-17, -22, 4, 4, 13, 0],
+  [17,  -22, 4, 4, 12, 4],
+  // ── Left column ──
+  [-17, -17, 5, 4, 14, 0],
+  [-17,  -9, 5, 4, 12, 2],
+  [-17,  -1, 5, 4, 10, 4],
+  [-17,   7, 5, 4,  9, 1],
+  [-22, -14, 4, 4, 11, 3],
+  [-22,  -5, 4, 4,  9, 0],
+  [-22,   4, 4, 4,  8, 2],
+  [-28,  -9, 4, 4,  6, 1],
+  [-28,   0, 4, 4,  5, 3],
+  [-28,   9, 4, 4,  6, 0],
+  // ── Right column ──
+  [17,  -17, 5, 4, 13, 4],
+  [17,   -9, 5, 4, 11, 0],
+  [17,   -1, 5, 4, 10, 2],
+  [17,    7, 5, 4,  9, 3],
+  [22,  -14, 4, 4, 11, 1],
+  [22,   -5, 4, 4,  9, 4],
+  [22,    4, 4, 4,  8, 0],
+  [28,   -9, 4, 4,  6, 2],
+  [28,    0, 4, 4,  5, 1],
+  [28,    9, 4, 4,  7, 3],
+  // ── Center fill ──
+  [-10,  -9, 4, 4, 10, 1],
+  [10,   -9, 4, 4, 10, 0],
+  [-5,   -6, 4, 4,  8, 3],
+  [5,    -6, 4, 4,  9, 2],
+  [0,    -6, 4, 3,  7, 4],
+  [-10,   1, 4, 4,  8, 0],
+  [10,    1, 4, 4,  8, 3],
+  [-5,    4, 4, 4,  7, 1],
+  [5,     4, 4, 4,  7, 2],
+  [0,     4, 4, 4,  6, 0],
+  [-15,   2, 4, 4,  8, 4],
+  [15,    2, 4, 4,  8, 1],
+  // ── Front edge ──
+  [-5,   14, 5, 4,  5, 2],
+  [5,    14, 5, 4,  5, 0],
+  [0,    14, 4, 4,  7, 3],
+  [-12,  14, 4, 4,  5, 1],
+  [12,   14, 4, 4,  5, 4],
+  [-21,  14, 4, 4,  5, 2],
+  [21,   14, 4, 4,  5, 0],
+  // ── Very front ──
+  [-5,   21, 4, 4,  4, 1],
+  [5,    21, 4, 4,  4, 3],
+  [0,    21, 3, 3,  5, 2],
+  [-11,  21, 4, 4,  4, 0],
+  [11,   21, 4, 4,  4, 4],
 ]
 
 // ─── TREE POSITIONS ───────────────────────────────────────────────────────────
 const TREES = [
   [-4, 7], [4, 7], [0, 9], [-8, 8], [8, 8],
-  [-12, 4], [12, 4], [-2, -2], [2, -2],
-  [-6, 1], [6, 1], [0, -2],
+  [-12, 4], [12, 4], [-2, -2], [2, -2], [0, -3], [-6, 1], [6, 1],
 ]
 
-// ─── LAUNCH PAD POSITIONS: [x, z, scale] ─────────────────────────────────────
+// ─── LAUNCH PADS: [x, z, scale] ──────────────────────────────────────────────
 const PADS = [
   [-26, 17, 1.0],
-  [0,   23, 1.1],
+  [0,   24, 1.1],
   [26,  17, 1.0],
   [-23, -1, 0.9],
   [23,  -1, 0.9],
 ]
 
-// ─── BOOSTER POSITIONS ────────────────────────────────────────────────────────
+// ─── BOOSTERS: [x, z] ────────────────────────────────────────────────────────
 const BOOSTERS = [
-  [-32, -25], [0, -25], [32, -25],
-  [-32,  25], [0,  25], [32,  25],
+  [-33, -26], [0, -27], [33, -26],
+  [-33,  26], [0,  27], [33,  26],
+]
+
+// ─── SCATTERED NEON LIGHTS to illuminate building faces ──────────────────────
+const NEON_LIGHTS = [
+  { pos: [-15, 18, -14], color: '#ff8800', d: 30 },
+  { pos: [15,  18, -14], color: '#cc44ff', d: 30 },
+  { pos: [0,   20, -18], color: '#00ccff', d: 28 },
+  { pos: [-20, 15, -8],  color: '#ff8800', d: 25 },
+  { pos: [20,  15, -8],  color: '#ff4488', d: 25 },
+  { pos: [0,   16,  5],  color: '#8844ff', d: 25 },
+  { pos: [-10, 14, -5],  color: '#ff8800', d: 22 },
+  { pos: [10,  14, -5],  color: '#00ccff', d: 22 },
+  { pos: [-26, 12, -4],  color: '#ff8800', d: 20 },
+  { pos: [26,  12, -4],  color: '#cc44ff', d: 20 },
+  { pos: [-5,  14, 13],  color: '#ff8800', d: 20 },
+  { pos: [5,   14, 13],  color: '#0066ff', d: 20 },
+  { pos: [0,   14, -8],  color: '#cc44ff', d: 22 },
+  { pos: [-15, 12,  2],  color: '#ff8800', d: 18 },
+  { pos: [15,  12,  2],  color: '#00aaff', d: 18 },
+  { pos: [0,   10,  0],  color: '#ffffff', d: 40 },  // central fill
 ]
 
 // ─── OCEAN ────────────────────────────────────────────────────────────────────
 function Ocean() {
   const meshRef = useRef()
-  const geom = useMemo(() => new THREE.PlaneGeometry(1000, 1000, 72, 72), [])
+  const geom = useMemo(() => new THREE.PlaneGeometry(900, 900, 70, 70), [])
   const origXY = useMemo(() => {
     const pos = geom.attributes.position.array
-    const xy = new Float32Array((pos.length / 3) * 2)
+    const out = new Float32Array((pos.length / 3) * 2)
     for (let i = 0; i < pos.length / 3; i++) {
-      xy[i * 2]     = pos[i * 3]
-      xy[i * 2 + 1] = pos[i * 3 + 1]
+      out[i * 2] = pos[i * 3]; out[i * 2 + 1] = pos[i * 3 + 1]
     }
-    return xy
+    return out
   }, [geom])
 
   useFrame(({ clock }) => {
@@ -154,153 +195,120 @@ function Ocean() {
     for (let i = 0; i < pos.length / 3; i++) {
       const x = origXY[i * 2], y = origXY[i * 2 + 1]
       pos[i * 3 + 2] =
-        Math.sin(x * 0.04 + t * 0.9) * 0.8 +
-        Math.sin(y * 0.05 + t * 0.75) * 0.55 +
+        Math.sin(x * 0.04 + t * 0.9) * 0.85 +
+        Math.sin(y * 0.05 + t * 0.75) * 0.6 +
         Math.sin((x + y) * 0.03 + t * 0.55) * 0.4
     }
     geom.attributes.position.needsUpdate = true
     geom.computeVertexNormals()
-    // Scroll backward → city appears to move forward
-    meshRef.current.position.z = ((t * 3.5) % 80) - 40
+    // Scroll for "city moving forward" illusion
+    meshRef.current.position.z = ((t * 3.5) % 80) - 30
   })
 
   return (
     <mesh ref={meshRef} geometry={geom} rotation={[-Math.PI / 2, 0, 0]} position={[0, -13, -20]}>
       <meshStandardMaterial
-        color="#010a16" roughness={0.08} metalness={0.95}
-        emissive="#021020" emissiveIntensity={0.7}
+        color="#020d1e" roughness={0.05} metalness={0.98}
+        emissive="#041530" emissiveIntensity={0.9}
       />
     </mesh>
-  )
-}
-
-// ─── OCEAN SPRAY PARTICLES ────────────────────────────────────────────────────
-function OceanSpray() {
-  const ref = useRef()
-  const count = 300
-  const { positions, velocities } = useMemo(() => {
-    const positions = new Float32Array(count * 3)
-    const velocities = new Float32Array(count * 3)
-    for (let i = 0; i < count; i++) {
-      const angle = Math.random() * Math.PI * 2
-      const r = 30 + Math.random() * 10
-      positions[i * 3]     = Math.cos(angle) * r * 1.2
-      positions[i * 3 + 1] = -10 + Math.random() * 3
-      positions[i * 3 + 2] = Math.sin(angle) * r
-      velocities[i * 3]     = (Math.random() - 0.5) * 0.05
-      velocities[i * 3 + 1] = 0.02 + Math.random() * 0.04
-      velocities[i * 3 + 2] = (Math.random() - 0.5) * 0.05
-    }
-    return { positions, velocities }
-  }, [])
-
-  useFrame(() => {
-    if (!ref.current) return
-    const pos = ref.current.geometry.attributes.position.array
-    for (let i = 0; i < count; i++) {
-      pos[i * 3]     += velocities[i * 3]
-      pos[i * 3 + 1] += velocities[i * 3 + 1]
-      pos[i * 3 + 2] += velocities[i * 3 + 2]
-      if (pos[i * 3 + 1] > -7) {
-        const angle = Math.random() * Math.PI * 2
-        const r = 30 + Math.random() * 10
-        pos[i * 3]     = Math.cos(angle) * r * 1.2
-        pos[i * 3 + 1] = -12
-        pos[i * 3 + 2] = Math.sin(angle) * r
-      }
-    }
-    ref.current.geometry.attributes.position.needsUpdate = true
-  })
-
-  return (
-    <points ref={ref}>
-      <bufferGeometry>
-        <bufferAttribute attach="attributes-position" array={positions} count={count} itemSize={3} />
-      </bufferGeometry>
-      <pointsMaterial color="#55ddff" size={0.25} sizeAttenuation transparent opacity={0.6} />
-    </points>
   )
 }
 
 // ─── RAIN ─────────────────────────────────────────────────────────────────────
 function Rain() {
   const ref = useRef()
-  const count = 800
-  const positions = useMemo(() => {
-    const arr = new Float32Array(count * 3)
+  const count = 600
+  const pos = useMemo(() => {
+    const a = new Float32Array(count * 3)
     for (let i = 0; i < count; i++) {
-      arr[i * 3]     = (Math.random() - 0.5) * 140
-      arr[i * 3 + 1] = Math.random() * 80 + 5
-      arr[i * 3 + 2] = (Math.random() - 0.5) * 120
+      a[i*3] = (Math.random()-.5)*160; a[i*3+1] = Math.random()*100+5; a[i*3+2] = (Math.random()-.5)*140
     }
-    return arr
+    return a
   }, [])
-
   useFrame(() => {
     if (!ref.current) return
-    const pos = ref.current.geometry.attributes.position.array
+    const p = ref.current.geometry.attributes.position.array
     for (let i = 0; i < count; i++) {
-      pos[i * 3 + 1] -= 0.6
-      pos[i * 3 + 2] += 0.1
-      if (pos[i * 3 + 1] < -12) {
-        pos[i * 3]     = (Math.random() - 0.5) * 140
-        pos[i * 3 + 1] = 75
-        pos[i * 3 + 2] = (Math.random() - 0.5) * 120
-      }
+      p[i*3+1] -= 0.55; p[i*3+2] += 0.08
+      if (p[i*3+1] < -13) { p[i*3] = (Math.random()-.5)*160; p[i*3+1] = 90; p[i*3+2] = (Math.random()-.5)*140 }
     }
     ref.current.geometry.attributes.position.needsUpdate = true
   })
-
   return (
     <points ref={ref}>
       <bufferGeometry>
-        <bufferAttribute attach="attributes-position" array={positions} count={count} itemSize={3} />
+        <bufferAttribute attach="attributes-position" array={pos} count={count} itemSize={3} />
       </bufferGeometry>
-      <pointsMaterial color="#88aacc" size={0.18} sizeAttenuation transparent opacity={0.35} />
+      <pointsMaterial color="#6699bb" size={0.16} sizeAttenuation transparent opacity={0.3} />
     </points>
   )
 }
 
 // ─── PLATFORM ─────────────────────────────────────────────────────────────────
 function Platform() {
+  const edgeMat = useMemo(() => new THREE.MeshStandardMaterial({
+    color: '#00aaff', emissive: '#00aaff', emissiveIntensity: 3.0, roughness: 0.3,
+  }), [])
+  const gridMat = useMemo(() => new THREE.MeshStandardMaterial({
+    color: '#002244', emissive: '#002244', emissiveIntensity: 1.5,
+  }), [])
+
   return (
     <group>
       {/* Main slab */}
       <mesh position={[0, -2.5, 0]}>
-        <boxGeometry args={[72, 5, 58]} />
-        <meshStandardMaterial color="#09111e" roughness={0.9} metalness={0.3} />
+        <boxGeometry args={[74, 5, 60]} />
+        <meshStandardMaterial color="#080f1d" roughness={0.9} metalness={0.4} />
       </mesh>
-      {/* Underslab */}
-      <mesh position={[0, -5.5, 0]}>
-        <boxGeometry args={[70, 1.5, 56]} />
-        <meshStandardMaterial color="#060c15" roughness={1} metalness={0.2} />
+      {/* Under slab */}
+      <mesh position={[0, -5.6, 0]}>
+        <boxGeometry args={[72, 1.8, 58]} />
+        <meshStandardMaterial color="#050c18" roughness={1} metalness={0.2} />
       </mesh>
+      {/* Platform side detail bands */}
+      {[-1.5, -3.0].map((y, i) => (
+        <group key={i}>
+          <mesh position={[0, y, 30.3]}>
+            <boxGeometry args={[74, 0.7, 0.4]} />
+            <meshStandardMaterial color="#0a1525" roughness={0.8} />
+          </mesh>
+          <mesh position={[0, y, -30.3]}>
+            <boxGeometry args={[74, 0.7, 0.4]} />
+            <meshStandardMaterial color="#0a1525" roughness={0.8} />
+          </mesh>
+          <mesh position={[37.3, y, 0]}>
+            <boxGeometry args={[0.4, 0.7, 60]} />
+            <meshStandardMaterial color="#0a1525" roughness={0.8} />
+          </mesh>
+          <mesh position={[-37.3, y, 0]}>
+            <boxGeometry args={[0.4, 0.7, 60]} />
+            <meshStandardMaterial color="#0a1525" roughness={0.8} />
+          </mesh>
+        </group>
+      ))}
       {/* Neon edge trim – front/back */}
-      {[-29, 29].map((z, i) => (
-        <mesh key={i} position={[0, -0.2, z]}>
-          <boxGeometry args={[72.5, 0.22, 0.22]} />
-          <meshStandardMaterial color="#00aaff" emissive="#00aaff" emissiveIntensity={1.2} />
+      {[-30, 30].map((z, i) => (
+        <mesh key={i} position={[0, -0.1, z]} material={edgeMat}>
+          <boxGeometry args={[74.5, 0.28, 0.28]} />
         </mesh>
       ))}
       {/* Neon edge trim – left/right */}
-      {[-36, 36].map((x, i) => (
-        <mesh key={i} position={[x, -0.2, 0]}>
-          <boxGeometry args={[0.22, 0.22, 58.5]} />
-          <meshStandardMaterial color="#00aaff" emissive="#00aaff" emissiveIntensity={1.2} />
+      {[-37, 37].map((x, i) => (
+        <mesh key={i} position={[x, -0.1, 0]} material={edgeMat}>
+          <boxGeometry args={[0.28, 0.28, 60.5]} />
         </mesh>
       ))}
-      {/* Surface grid – vertical lines */}
+      {/* Road grid – vertical */}
       {[-24, -12, 0, 12, 24].map((x, i) => (
-        <mesh key={i} position={[x, 0.06, 0]}>
-          <boxGeometry args={[0.12, 0.08, 58]} />
-          <meshStandardMaterial color="#001833" emissive="#001833" emissiveIntensity={0.6} />
+        <mesh key={i} position={[x, 0.08, 0]} material={gridMat}>
+          <boxGeometry args={[0.18, 0.06, 60]} />
         </mesh>
       ))}
-      {/* Surface grid – horizontal lines */}
+      {/* Road grid – horizontal */}
       {[-24, -12, 0, 12, 24].map((z, i) => (
-        <mesh key={i} position={[0, 0.06, z]}>
-          <boxGeometry args={[72, 0.08, 0.12]} />
-          <meshStandardMaterial color="#001833" emissive="#001833" emissiveIntensity={0.6} />
+        <mesh key={i} position={[0, 0.08, z]} material={gridMat}>
+          <boxGeometry args={[74, 0.06, 0.18]} />
         </mesh>
       ))}
     </group>
@@ -308,36 +316,34 @@ function Platform() {
 }
 
 // ─── BUILDING ─────────────────────────────────────────────────────────────────
-function Building({ bx, bz, w, d, h, type }) {
-  const mats = useMemo(() => getBuildingMat(type), [type])
+function Building({ bx, bz, w, d, h, mi }) {
+  const mats = BMAT[mi % BMAT.length]
   const geom = useMemo(() => new THREE.BoxGeometry(w, h, d), [w, h, d])
-  const antColor = { warm:'#ff8800', cyan:'#00ccff', purple:'#cc44ff', pink:'#ff3366', green:'#00ff88' }[type]
-
   return (
     <group position={[bx, 0, bz]}>
       <mesh position={[0, h / 2, 0]} geometry={geom} material={mats} />
-      {/* Roof cover (hides window tex on top) */}
+      {/* Roof cap – hides window texture on top */}
       <mesh position={[0, h + 0.02, 0]}>
-        <boxGeometry args={[w + 0.08, 0.04, d + 0.08]} />
-        <meshStandardMaterial color="#030810" roughness={0.95} />
+        <boxGeometry args={[w + 0.1, 0.05, d + 0.1]} />
+        <meshStandardMaterial color="#040b14" roughness={0.95} />
       </mesh>
       {/* Rooftop block */}
       {h > 8 && (
-        <mesh position={[0, h + 0.6, 0]}>
-          <boxGeometry args={[w * 0.55, 1.0, d * 0.55]} />
-          <meshStandardMaterial color="#070f1a" roughness={0.9} metalness={0.4} />
+        <mesh position={[0, h + 0.7, 0]}>
+          <boxGeometry args={[w * 0.55, 1.1, d * 0.55]} />
+          <meshStandardMaterial color="#060d18" roughness={0.9} metalness={0.5} />
         </mesh>
       )}
-      {/* Antenna on skyscrapers */}
-      {h > 16 && (
+      {/* Antenna on tall buildings */}
+      {h > 18 && (
         <>
-          <mesh position={[0, h + h * 0.15 + 1.2, 0]}>
-            <cylinderGeometry args={[0.06, 0.07, h * 0.28, 6]} />
-            <meshStandardMaterial color={antColor} emissive={antColor} emissiveIntensity={1.5} />
+          <mesh position={[0, h + h * 0.16 + 1, 0]}>
+            <cylinderGeometry args={[0.07, 0.08, h * 0.30, 6]} />
+            <meshStandardMaterial color="#00ccff" emissive="#00ccff" emissiveIntensity={2} />
           </mesh>
-          <mesh position={[0, h + h * 0.29 + 1.4, 0]}>
-            <sphereGeometry args={[0.22, 8, 8]} />
-            <meshStandardMaterial color="#ff2200" emissive="#ff2200" emissiveIntensity={4} />
+          <mesh position={[0, h + h * 0.31 + 1.2, 0]}>
+            <sphereGeometry args={[0.25, 8, 8]} />
+            <meshStandardMaterial color="#ff2200" emissive="#ff2200" emissiveIntensity={5} />
           </mesh>
         </>
       )}
@@ -353,9 +359,9 @@ function Tree({ tx, tz }) {
         <cylinderGeometry args={[0.18, 0.22, 1.8, 6]} />
         <meshStandardMaterial color="#2d1800" roughness={1} />
       </mesh>
-      <mesh position={[0, 3.0, 0]}>
-        <coneGeometry args={[1.4, 3.0, 6]} />
-        <meshStandardMaterial color="#0d3d12" emissive="#052009" emissiveIntensity={0.5} roughness={0.9} />
+      <mesh position={[0, 2.9, 0]}>
+        <coneGeometry args={[1.4, 3.2, 6]} />
+        <meshStandardMaterial color="#0f4418" emissive="#062210" emissiveIntensity={0.6} roughness={0.9} />
       </mesh>
     </group>
   )
@@ -363,245 +369,214 @@ function Tree({ tx, tz }) {
 
 // ─── LAUNCH PAD ───────────────────────────────────────────────────────────────
 function LaunchPad({ lx, lz, scale = 1 }) {
-  const ring0 = useRef(), ring1 = useRef(), ring2 = useRef()
-  const screenRef = useRef()
-  const lightRef = useRef()
-
+  const r0 = useRef(), r1 = useRef(), r2 = useRef(), scrMat = useRef(), lRef = useRef()
   useFrame(({ clock }) => {
     const t = clock.elapsedTime
-    if (ring0.current) ring0.current.rotation.z =  t * 0.55
-    if (ring1.current) ring1.current.rotation.z = -t * 0.38
-    if (ring2.current) ring2.current.rotation.z =  t * 0.28
-    if (screenRef.current) screenRef.current.emissiveIntensity = 0.6 + Math.sin(t * 1.8 + lx) * 0.25
-    if (lightRef.current) lightRef.current.intensity = 2.5 + Math.sin(t * 2.5 + lz) * 0.8
+    if (r0.current) r0.current.rotation.z =  t * 0.55
+    if (r1.current) r1.current.rotation.z = -t * 0.38
+    if (r2.current) r2.current.rotation.z =  t * 0.28
+    if (scrMat.current) scrMat.current.emissiveIntensity = 0.8 + Math.sin(t * 1.8 + lx) * 0.3
+    if (lRef.current)   lRef.current.intensity = 3 + Math.sin(t * 2.5 + lz) * 1.0
   })
-
   return (
-    <group position={[lx, -1.0, lz]}>
+    <group position={[lx, -0.5, lz]}>
       {/* Octagonal base */}
       <mesh>
-        <cylinderGeometry args={[5.2 * scale, 5.8 * scale, 1.4, 8]} />
-        <meshStandardMaterial color="#0a1520" metalness={0.75} roughness={0.45} />
+        <cylinderGeometry args={[5.4 * scale, 5.9 * scale, 1.6, 8]} />
+        <meshStandardMaterial color="#0a1622" metalness={0.8} roughness={0.4} />
       </mesh>
-      {/* Inner platform */}
-      <mesh position={[0, 0.9, 0]}>
-        <cylinderGeometry args={[4.0 * scale, 4.0 * scale, 0.4, 8]} />
-        <meshStandardMaterial color="#0d1a28" metalness={0.6} roughness={0.5} />
+      {/* Inner ring platform */}
+      <mesh position={[0, 1.0, 0]}>
+        <cylinderGeometry args={[4.1 * scale, 4.1 * scale, 0.45, 8]} />
+        <meshStandardMaterial color="#0c1a2a" metalness={0.65} />
       </mesh>
       {/* Ring 0 – outer */}
-      <mesh ref={ring0} rotation={[Math.PI / 2, 0, 0]} position={[0, 1.1, 0]}>
-        <torusGeometry args={[4.5 * scale, 0.13, 8, 72]} />
-        <meshStandardMaterial color="#00aaff" emissive="#00aaff" emissiveIntensity={2.2} />
+      <mesh ref={r0} rotation={[Math.PI/2,0,0]} position={[0, 1.15, 0]}>
+        <torusGeometry args={[4.5 * scale, 0.15, 8, 72]} />
+        <meshStandardMaterial color="#00aaff" emissive="#00aaff" emissiveIntensity={3.0} />
       </mesh>
       {/* Ring 1 – mid */}
-      <mesh ref={ring1} rotation={[Math.PI / 2, 0, 0]} position={[0, 1.18, 0]}>
-        <torusGeometry args={[3.4 * scale, 0.11, 8, 64]} />
-        <meshStandardMaterial color="#0055ff" emissive="#0055ff" emissiveIntensity={2.0} />
+      <mesh ref={r1} rotation={[Math.PI/2,0,0]} position={[0, 1.23, 0]}>
+        <torusGeometry args={[3.4 * scale, 0.12, 8, 64]} />
+        <meshStandardMaterial color="#0055ff" emissive="#0055ff" emissiveIntensity={3.0} />
       </mesh>
       {/* Ring 2 – inner */}
-      <mesh ref={ring2} rotation={[Math.PI / 2, 0, 0]} position={[0, 1.26, 0]}>
-        <torusGeometry args={[2.3 * scale, 0.10, 8, 56]} />
-        <meshStandardMaterial color="#00eeff" emissive="#00eeff" emissiveIntensity={2.5} />
-      </mesh>
-      {/* Center glow disk */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 1.32, 0]}>
-        <circleGeometry args={[1.6 * scale, 32]} />
+      <mesh ref={r2} rotation={[Math.PI/2,0,0]} position={[0, 1.30, 0]}>
+        <torusGeometry args={[2.3 * scale, 0.11, 8, 56]} />
         <meshStandardMaterial color="#00eeff" emissive="#00eeff" emissiveIntensity={3.5} />
       </mesh>
-      {/* Holographic screen */}
-      <group position={[0, 6.5 * scale, 0]}>
+      {/* Center glow */}
+      <mesh rotation={[-Math.PI/2,0,0]} position={[0, 1.35, 0]}>
+        <circleGeometry args={[1.7 * scale, 32]} />
+        <meshStandardMaterial color="#00eeff" emissive="#00eeff" emissiveIntensity={5} />
+      </mesh>
+      {/* Holographic display */}
+      <group position={[0, 6.8 * scale, 0]}>
         <mesh>
-          <planeGeometry args={[5.2 * scale, 3.2 * scale]} />
+          <planeGeometry args={[5.5 * scale, 3.4 * scale]} />
           <meshStandardMaterial
-            ref={screenRef}
-            color="#001122" emissive="#003a66" emissiveIntensity={0.8}
-            transparent opacity={0.88} side={THREE.DoubleSide}
+            ref={scrMat} color="#001122" emissive="#004477"
+            emissiveIntensity={0.8} transparent opacity={0.88} side={THREE.DoubleSide}
           />
         </mesh>
-        {/* Screen border */}
-        {[[-2.6 * scale, 0], [2.6 * scale, 0]].map(([x, _], i) => (
-          <mesh key={i} position={[x, 0, 0.02]}>
-            <planeGeometry args={[0.09, 3.2 * scale]} />
-            <meshStandardMaterial color="#00aaff" emissive="#00aaff" emissiveIntensity={2.5} />
+        {/* Border lines */}
+        {[[-2.75 * scale, 0],[2.75 * scale, 0]].map(([x,_], i) => (
+          <mesh key={i} position={[x, 0, 0.01]}>
+            <planeGeometry args={[0.09, 3.4 * scale]} />
+            <meshStandardMaterial color="#00aaff" emissive="#00aaff" emissiveIntensity={3} />
           </mesh>
         ))}
-        {[[-1.5 * scale, 0], [1.5 * scale, 0]].map(([y, _], i) => (
-          <mesh key={i} position={[0, y, 0.02]}>
-            <planeGeometry args={[5.2 * scale, 0.07]} />
-            <meshStandardMaterial color="#00aaff" emissive="#00aaff" emissiveIntensity={2.5} />
+        {[[-1.6 * scale, 0],[1.6 * scale, 0]].map(([y,_], i) => (
+          <mesh key={i} position={[0, y, 0.01]}>
+            <planeGeometry args={[5.5 * scale, 0.07]} />
+            <meshStandardMaterial color="#00aaff" emissive="#00aaff" emissiveIntensity={3} />
           </mesh>
         ))}
-        {/* Scan lines */}
-        {[-1.1, -0.5, 0.1, 0.7, 1.1].map((y, i) => (
-          <mesh key={i} position={[0, y * scale, 0.03]}>
-            <planeGeometry args={[4.8 * scale, 0.06]} />
-            <meshStandardMaterial color="#00ccff" emissive="#00ccff" emissiveIntensity={0.8} transparent opacity={0.5} />
+        {[-1.0, -0.4, 0.2, 0.8].map((y, i) => (
+          <mesh key={i} position={[0, y * scale, 0.02]}>
+            <planeGeometry args={[5.0 * scale, 0.07]} />
+            <meshStandardMaterial color="#00ccff" emissive="#00ccff" emissiveIntensity={1.2} transparent opacity={0.6} />
           </mesh>
         ))}
       </group>
-      {/* Glow light */}
-      <pointLight ref={lightRef} color="#00aaff" intensity={3} distance={22} position={[0, 2, 0]} />
+      <pointLight ref={lRef} color="#00aaff" intensity={4} distance={25} position={[0, 2, 0]} />
     </group>
   )
 }
 
 // ─── BOOSTER ──────────────────────────────────────────────────────────────────
 function Booster({ bx, bz }) {
-  const lightRef = useRef()
-  const glowRef = useRef()
-
+  const lRef = useRef(), gRef = useRef()
   useFrame(({ clock }) => {
-    const t = clock.elapsedTime
-    const p = 3.2 + Math.sin(t * 2.8 + bx * 0.3) * 1.4
-    if (lightRef.current) lightRef.current.intensity = p
-    if (glowRef.current)  glowRef.current.emissiveIntensity = p * 0.9
+    const p = 3.5 + Math.sin(clock.elapsedTime * 2.8 + bx * 0.3) * 1.5
+    if (lRef.current) lRef.current.intensity = p
+    if (gRef.current) gRef.current.emissiveIntensity = p * 0.85
   })
-
   return (
     <group position={[bx, -7.5, bz]}>
-      {/* Outer housing */}
       <mesh>
-        <cylinderGeometry args={[1.6, 2.1, 3.5, 8]} />
+        <cylinderGeometry args={[1.7, 2.2, 3.6, 8]} />
         <meshStandardMaterial color="#0a1522" metalness={0.85} roughness={0.25} />
       </mesh>
-      {/* Inner nozzle */}
-      <mesh position={[0, -2.8, 0]}>
-        <cylinderGeometry args={[0.9, 0.5, 2.2, 8]} />
-        <meshStandardMaterial ref={glowRef} color="#00eeff" emissive="#00eeff" emissiveIntensity={3} />
+      <mesh position={[0, -2.9, 0]}>
+        <cylinderGeometry args={[0.9, 0.5, 2.4, 8]} />
+        <meshStandardMaterial ref={gRef} color="#00eeff" emissive="#00eeff" emissiveIntensity={3.5} />
       </mesh>
-      {/* Flame sphere */}
-      <mesh position={[0, -4.2, 0]}>
-        <sphereGeometry args={[1.3, 16, 16]} />
-        <meshStandardMaterial color="#00ccff" emissive="#00ccff" emissiveIntensity={4} transparent opacity={0.65} />
+      <mesh position={[0, -4.4, 0]}>
+        <sphereGeometry args={[1.5, 16, 16]} />
+        <meshStandardMaterial color="#00ccff" emissive="#00ccff" emissiveIntensity={5} transparent opacity={0.7} />
       </mesh>
-      {/* Wide glow halo */}
-      <mesh position={[0, -4.8, 0]}>
-        <sphereGeometry args={[2.0, 12, 12]} />
-        <meshStandardMaterial color="#0066ff" emissive="#0066ff" emissiveIntensity={2} transparent opacity={0.25} />
+      <mesh position={[0, -5.1, 0]}>
+        <sphereGeometry args={[2.2, 12, 12]} />
+        <meshStandardMaterial color="#0066ff" emissive="#0066ff" emissiveIntensity={2.5} transparent opacity={0.2} />
       </mesh>
-      {/* Point light */}
-      <pointLight ref={lightRef} color="#00ccff" intensity={4} distance={32} position={[0, -4, 0]} />
+      <pointLight ref={lRef} color="#00ccff" intensity={4.5} distance={35} position={[0, -4, 0]} />
     </group>
   )
 }
 
-// ─── HOLOGRAPHIC BILLBOARD ────────────────────────────────────────────────────
-function Billboard({ bx, bz, h = 8 }) {
-  return (
-    <group position={[bx, 0, bz]}>
-      <mesh position={[0, h / 2, 0]}>
-        <cylinderGeometry args={[0.12, 0.12, h, 6]} />
-        <meshStandardMaterial color="#223344" metalness={0.9} />
-      </mesh>
-      <mesh position={[0, h + 1.4, 0]}>
-        <planeGeometry args={[4.5, 2.8]} />
-        <meshStandardMaterial
-          color="#001122" emissive="#004488" emissiveIntensity={1.1}
-          transparent opacity={0.88} side={THREE.DoubleSide}
-        />
-      </mesh>
-      <pointLight color="#0066ff" intensity={1} distance={12} position={[0, h + 1, 0]} />
-    </group>
-  )
-}
-
-// ─── CITY GROUP (bobs + forward lean) ─────────────────────────────────────────
+// ─── CITY GROUP – bobs + slight lean ─────────────────────────────────────────
 function CityGroup() {
-  const groupRef = useRef()
-
+  const ref = useRef()
   useFrame(({ clock }) => {
     const t = clock.elapsedTime
-    if (!groupRef.current) return
-    groupRef.current.position.y = Math.sin(t * 0.42) * 0.9
-    groupRef.current.rotation.x = Math.sin(t * 0.28) * 0.008
-    groupRef.current.rotation.z = Math.sin(t * 0.35) * 0.004
+    if (!ref.current) return
+    ref.current.position.y = Math.sin(t * 0.42) * 0.9
+    ref.current.rotation.x = Math.sin(t * 0.28) * 0.007
+    ref.current.rotation.z = Math.sin(t * 0.35) * 0.004
   })
-
   return (
-    <group ref={groupRef}>
+    <group ref={ref}>
       <Platform />
-      {BUILDINGS.map(([x, z, w, d, h, type], i) => (
-        <Building key={i} bx={x} bz={z} w={w} d={d} h={h} type={type} />
+      {BUILDINGS.map(([x, z, w, d, h, mi], i) => (
+        <Building key={i} bx={x} bz={z} w={w} d={d} h={h} mi={mi} />
       ))}
       {TREES.map(([x, z], i) => <Tree key={i} tx={x} tz={z} />)}
-      {PADS.map(([x, z, scale], i) => <LaunchPad key={i} lx={x} lz={z} scale={scale} />)}
+      {PADS.map(([x, z, s], i) => <LaunchPad key={i} lx={x} lz={z} scale={s} />)}
       {BOOSTERS.map(([x, z], i) => <Booster key={i} bx={x} bz={z} />)}
-      {/* Extra billboards */}
-      <Billboard bx={-28} bz={-22} h={9} />
-      <Billboard bx={28}  bz={-22} h={9} />
-      <Billboard bx={0}   bz={-26} h={11} />
+      {/* Extra billboard poles */}
+      {[[-30, -23, 9], [30, -23, 9], [0, -27, 11]].map(([x, z, h], i) => (
+        <group key={i} position={[x, 0, z]}>
+          <mesh position={[0, h / 2, 0]}>
+            <cylinderGeometry args={[0.12, 0.12, h, 6]} />
+            <meshStandardMaterial color="#223344" metalness={0.9} />
+          </mesh>
+          <mesh position={[0, h + 1.5, 0]}>
+            <planeGeometry args={[5, 3]} />
+            <meshStandardMaterial color="#001122" emissive="#0044aa" emissiveIntensity={1.8} transparent opacity={0.9} side={THREE.DoubleSide} />
+          </mesh>
+          <pointLight color="#0066ff" intensity={1.5} distance={14} position={[0, h + 1, 0]} />
+        </group>
+      ))}
     </group>
   )
 }
 
 // ─── SCENE LIGHTS ─────────────────────────────────────────────────────────────
 function SceneLights() {
-  const neon1Ref = useRef(), neon2Ref = useRef()
-
-  useFrame(({ clock }) => {
-    const t = clock.elapsedTime
-    if (neon1Ref.current) neon1Ref.current.intensity = 1.2 + Math.sin(t * 1.3) * 0.4
-    if (neon2Ref.current) neon2Ref.current.intensity = 1.2 + Math.sin(t * 1.7 + 1) * 0.4
-  })
-
   return (
     <>
-      <ambientLight color="#050c1a" intensity={0.6} />
-      <directionalLight color="#1a2d4a" intensity={0.9} position={[-60, 100, 60]} />
-      <pointLight color="#0033aa" intensity={1.5} distance={220} position={[0, 40, 0]} />
-      <pointLight ref={neon1Ref} color="#ff6600" intensity={1.2} distance={60} position={[-18, 22, -12]} />
-      <pointLight ref={neon2Ref} color="#cc00ff" intensity={1.2} distance={60} position={[18, 22, -12]} />
-      <pointLight color="#00ccff" intensity={0.9} distance={80} position={[0, 10, 20]} />
+      {/* Strong ambient – city-wide blue-white glow */}
+      <ambientLight color="#1a2d66" intensity={3.5} />
+      {/* Moonlight directional from upper left */}
+      <directionalLight color="#aabbdd" intensity={1.8} position={[-40, 100, 60]} />
+      {/* Fill light from right */}
+      <directionalLight color="#334488" intensity={0.9} position={[60, 60, 30]} />
+      {/* City glow overhead */}
+      <pointLight color="#2244aa" intensity={2} distance={200} position={[0, 50, 0]} />
+      {/* Scattered neon point lights for building illumination */}
+      {NEON_LIGHTS.map(({ pos, color, d }, i) => (
+        <pointLight key={i} color={color} intensity={2.5} distance={d} position={pos} />
+      ))}
     </>
   )
 }
 
-// ─── MAIN CANVAS ──────────────────────────────────────────────────────────────
+// ─── MAIN EXPORT ──────────────────────────────────────────────────────────────
 export default function CyberpunkCity() {
   return (
     <div style={{ width: '100vw', height: '100vh', background: '#010812', overflow: 'hidden' }}>
-      {/* HUD overlay */}
+      {/* HUD */}
       <div style={{
-        position: 'fixed', top: 24, left: 32, zIndex: 10, pointerEvents: 'none',
-        fontFamily: 'monospace',
+        position: 'fixed', top: 22, left: 28, zIndex: 10, pointerEvents: 'none', fontFamily: 'monospace',
       }}>
-        <div style={{ fontSize: 10, color: '#00aaff', letterSpacing: 3, marginBottom: 4, opacity: 0.7 }}>
+        <div style={{ fontSize: 10, color: '#00aaff', letterSpacing: 3, marginBottom: 4, opacity: 0.8 }}>
           ◈ NEURAL CITY — SECTOR 7
         </div>
-        <div style={{ fontSize: 8, color: 'rgba(0,180,255,0.4)', letterSpacing: 2 }}>
-          5 LAUNCH PADS ACTIVE &nbsp;·&nbsp; BOOSTERS ONLINE
+        <div style={{ fontSize: 8, color: 'rgba(0,170,255,0.45)', letterSpacing: 2 }}>
+          5 LAUNCH PADS ACTIVE · BOOSTERS ONLINE
         </div>
       </div>
-      {/* Controls hint */}
       <div style={{
-        position: 'fixed', bottom: 24, right: 32, zIndex: 10, pointerEvents: 'none',
+        position: 'fixed', bottom: 22, right: 28, zIndex: 10, pointerEvents: 'none',
         fontFamily: 'monospace', fontSize: 9, color: 'rgba(0,170,255,0.35)',
-        letterSpacing: 2, textAlign: 'right', lineHeight: 2,
+        letterSpacing: 2, textAlign: 'right',
       }}>
-        DRAG — ORBIT &nbsp;·&nbsp; SCROLL — ZOOM
+        SCROLL — ZOOM
       </div>
 
       <Canvas
-        camera={{ position: [75, 95, 85], fov: 44, near: 0.5, far: 1500 }}
-        gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.3 }}
-        shadows
+        camera={{ position: [62, 88, 80], fov: 46, near: 0.5, far: 2000 }}
+        gl={{
+          antialias: true,
+          toneMapping: THREE.LinearToneMapping,
+          toneMappingExposure: 0.95,
+        }}
       >
-        <fog attach="fog" args={['#010812', 120, 400]} />
-        <Stars radius={300} depth={60} count={4000} factor={4} saturation={0} fade speed={0.5} />
-
+        <fog attach="fog" args={['#010a1a', 130, 450]} />
+        <Stars radius={280} depth={55} count={4500} factor={4} saturation={0.2} fade speed={0.4} />
         <SceneLights />
         <Ocean />
-        <OceanSpray />
         <Rain />
         <CityGroup />
-
+        {/* Fixed isometric angle – ROTATION LOCKED, zoom only */}
         <OrbitControls
-          enableDamping
-          dampingFactor={0.05}
-          maxPolarAngle={Math.PI / 2.1}
-          minPolarAngle={Math.PI / 6}
-          minDistance={35}
-          maxDistance={250}
+          enableRotate={false}
+          enablePan={false}
+          enableZoom={true}
+          zoomSpeed={0.8}
+          minDistance={38}
+          maxDistance={220}
           target={[0, 8, 0]}
         />
       </Canvas>
